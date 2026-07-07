@@ -771,10 +771,16 @@ function renderPerdas(){
   const valorInsumosDescarte = semAproveitamento.reduce((s,p)=>s+Number(p.valorInsumos||0),0);
   const valorPecasMes = semAproveitamento.reduce((s,p)=>s+Number(p.valor||0),0);
 
-  const outrasPerdas = mesAtual.filter(p=>p.motivo!=='Tecido não aproveitado (costura)' && p.motivo!=='Peça sem aproveitamento (revisão)');
+  const naoRetornou = mesAtual.filter(p=>p.motivo==='Peça não retornou (perda)');
+  const qtdNaoRetornouMes = naoRetornou.reduce((s,p)=>s+Number(p.quantidade||0),0);
+  const valorMateriaPrimaNaoRet = naoRetornou.reduce((s,p)=>s+Number(p.valorMateriaPrima||0),0);
+  const valorCorteNaoRet = naoRetornou.reduce((s,p)=>s+Number(p.valorCorte||0),0);
+  const valorNaoRetornouMes = naoRetornou.reduce((s,p)=>s+Number(p.valor||0),0);
+
+  const outrasPerdas = mesAtual.filter(p=>p.motivo!=='Tecido não aproveitado (costura)' && p.motivo!=='Peça sem aproveitamento (revisão)' && p.motivo!=='Peça não retornou (perda)');
   const valorOutras = outrasPerdas.reduce((s,p)=>s+Number(p.valor||0),0);
 
-  const totalMes = valorTecidoMes + valorPecasMes + valorOutras;
+  const totalMes = valorTecidoMes + valorPecasMes + valorNaoRetornouMes + valorOutras;
 
   let html = `<div class="metric-grid" style="grid-template-columns:1fr;">
     <div class="metric"><div class="label">Total perdido este mês</div><div class="value" style="color:var(--perda)">${fmtMoney(totalMes)}</div></div>
@@ -802,6 +808,21 @@ function renderPerdas(){
     <div class="stitch"></div>
     <div class="item-top"><div class="item-title">Total do prejuízo</div><div class="item-right" style="color:var(--perda)">${fmtMoney(valorPecasMes)}</div></div>
   </div>`;
+
+  if(qtdNaoRetornouMes>0){
+    html += `<div class="section-title">Peças que não retornaram da costura</div>
+    <div class="card">
+      <div class="item-top">
+        <div><div class="item-title">Quantidade perdida</div></div>
+        <div class="item-right">${qtdNaoRetornouMes} pç</div>
+      </div>
+      <div class="stitch"></div>
+      <div class="rate-row"><span>Matéria-prima (tecido + ribana)</span><span>${fmtMoney(valorMateriaPrimaNaoRet)}</span></div>
+      <div class="rate-row"><span>Corte (mão de obra)</span><span>${fmtMoney(valorCorteNaoRet)}</span></div>
+      <div class="stitch"></div>
+      <div class="item-top"><div class="item-title">Total do prejuízo</div><div class="item-right" style="color:var(--perda)">${fmtMoney(valorNaoRetornouMes)}</div></div>
+    </div>`;
+  }
 
   if(outrasPerdas.length>0){
     html += `<div class="section-title">Outras perdas</div>
@@ -1654,7 +1675,13 @@ function openRetornoForm(loteId){
     <div class="row4">
       ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_ret${t}" type="number" min="0" value="${isCorte?0:(p.tamanhosEnviados?p.tamanhosEnviados[t]:0)}"></div>`).join('')}
     </div>
-    ${!isCorte ? `<div class="field"><label>Peso que voltou sem dar pra costurar (kg)</label><input id="f_pesoNao" type="number" min="0" step="0.01" value="0"></div>` : ''}
+    ${!isCorte ? `
+    <div class="field"><label>Destas que faltam, quantas não vão mais voltar (perda)</label></div>
+    <div class="row4">
+      ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_perda${t}" type="number" min="0" value="0"></div>`).join('')}
+    </div>
+    <div class="field hint">Essas entram direto em Perdas (tecido + mão de obra do corte). O que não for marcado aqui nem retornar agora continua aguardando coleta.</div>
+    <div class="field"><label>Peso que voltou sem dar pra costurar (kg)</label><input id="f_pesoNao" type="number" min="0" step="0.01" value="0"></div>` : ''}
     <div class="field"><label>Data do retorno</label><input id="f_dataRet" type="date" value="${todayStr()}"></div>
     <div class="checkfield">
       <input type="checkbox" id="f_pagoRetirada" checked>
@@ -1677,9 +1704,8 @@ function openRetornoForm(loteId){
     const pagoNaRetirada = document.getElementById('f_pagoRetirada').checked;
     const dataPag = pagoNaRetirada ? document.getElementById('f_dataPag').value : null;
 
-    if(qtd<=0){ showToast('Informe ao menos uma peça'); return; }
-
     if(isCorte){
+      if(qtd<=0){ showToast('Informe ao menos uma peça'); return; }
       p.tamanhosCortados = tam;
       p.quantidadeRetornada = qtd;
       p.dataRetorno = dataRetorno;
@@ -1702,40 +1728,68 @@ function openRetornoForm(loteId){
       return;
     }
 
-    // Costura: pode ser retorno parcial
+    // Costura: pode ser retorno parcial, e o que faltar pode ser marcado como perda
     const pesoNao = Number(document.getElementById('f_pesoNao').value)||0;
-    const pendente = {};
-    TAMS.forEach(t=>{ pendente[t] = Math.max(0, Number(p.tamanhosEnviados?p.tamanhosEnviados[t]:0) - (tam[t]||0)); });
-    const totalPendente = somaTam(pendente);
+    const pendenteAntes = {};
+    TAMS.forEach(t=>{ pendenteAntes[t] = Number(p.tamanhosEnviados?p.tamanhosEnviados[t]:0); });
+    const perdaSolicitada = {};
+    TAMS.forEach(t=>{ perdaSolicitada[t] = Number(document.querySelector('.f_perda'+t).value)||0; });
+    const perda = {};
+    const restante = {};
+    TAMS.forEach(t=>{
+      const sobraAposRetorno = Math.max(0, pendenteAntes[t] - (tam[t]||0));
+      perda[t] = Math.min(perdaSolicitada[t]||0, sobraAposRetorno);
+      restante[t] = sobraAposRetorno - perda[t];
+    });
+    const qtdPerda = somaTam(perda);
+    const qtdRestante = somaTam(restante);
 
-    if(totalPendente > 0){
-      // Retorno parcial: separa o que voltou agora num registro próprio (segue o fluxo normal de revisão/pagamento)
-      const registro = JSON.parse(JSON.stringify(p));
-      registro.id = uid();
-      registro.tamanhosEnviados = {...tam};
-      registro.tamanhosRetornados = {...tam};
-      registro.quantidadeEnviada = qtd;
-      registro.quantidadeRetornada = qtd;
-      registro.dataRetorno = dataRetorno;
-      registro.status = 'retornado';
-      registro.paga = pagoNaRetirada;
-      registro.dataPagamento = dataPag;
-      registro.valorTotal = qtd * Number(p.valorUnit||0);
-      registro.pesoNaoCosturado = pesoNao;
-      producao.push(registro);
-      if(pesoNao>0){
-        const precoKgTec = p.precoKgTecidoHerdado!=null ? p.precoKgTecidoHerdado : precoMedioTecidoPorProduto(p.produto);
-        const valorPerdaTecido = pesoNao * precoKgTec;
-        perdas.push({id:uid(), data:dataRetorno, produto:p.produto, quantidade:null, pesoKg:pesoNao, motivo:'Tecido não aproveitado (costura)', valor:valorPerdaTecido, funcionario:p.funcionario});
-        await savePerdas();
+    if(qtd<=0 && qtdPerda<=0){ showToast('Informe ao menos uma peça retornada ou perdida'); return; }
+
+    if(qtdPerda>0){
+      const calc = calcularPerdaNaoRetorno(p, qtdPerda);
+      perdas.push({id:uid(), loteId:p.id, data:dataRetorno, produto:p.produto, quantidade:qtdPerda,
+        valorMateriaPrima:calc.valorMateriaPrima, valorCorte:calc.valorCorte,
+        motivo:'Peça não retornou (perda)', valor:calc.valorTotal, funcionario:p.funcionario});
+      await savePerdas();
+    }
+    if(pesoNao>0){
+      const precoKgTec = p.precoKgTecidoHerdado!=null ? p.precoKgTecidoHerdado : precoMedioTecidoPorProduto(p.produto);
+      const valorPerdaTecido = pesoNao * precoKgTec;
+      perdas.push({id:uid(), data:dataRetorno, produto:p.produto, quantidade:null, pesoKg:pesoNao, motivo:'Tecido não aproveitado (costura)', valor:valorPerdaTecido, funcionario:p.funcionario});
+      await savePerdas();
+    }
+
+    if(qtd<=0 && qtdRestante<=0){
+      // nada retornou agora e não sobrou pendência: tudo que faltava virou perda, encerra o lote
+      producao = producao.filter(x=>x.id!==p.id);
+      await saveProducao(); closeModal(); render(); showToast('Perda registrada e lote encerrado.');
+      return;
+    }
+
+    if(qtdRestante>0){
+      if(qtd>0){
+        // ainda sobra pendência: separa o que voltou agora num registro próprio (segue revisão/pagamento normalmente)
+        const registro = JSON.parse(JSON.stringify(p));
+        registro.id = uid();
+        registro.tamanhosEnviados = {...tam};
+        registro.tamanhosRetornados = {...tam};
+        registro.quantidadeEnviada = qtd;
+        registro.quantidadeRetornada = qtd;
+        registro.dataRetorno = dataRetorno;
+        registro.status = 'retornado';
+        registro.paga = pagoNaRetirada;
+        registro.dataPagamento = dataPag;
+        registro.valorTotal = qtd * Number(p.valorUnit||0);
+        registro.pesoNaoCosturado = pesoNao;
+        producao.push(registro);
       }
-      // o lote original continua "enviado", só com o que ainda falta ser retirado
-      p.tamanhosEnviados = pendente;
-      p.quantidadeEnviada = totalPendente;
+      p.tamanhosEnviados = restante;
+      p.quantidadeEnviada = qtdRestante;
       await saveProducao(); closeModal(); render();
-      showToast('Retorno parcial registrado. Ainda faltam '+totalPendente+' peça(s) pra retirar.');
+      showToast((qtdPerda>0?'Perda registrada. ':'')+'Retorno parcial registrado. Ainda faltam '+qtdRestante+' peça(s) pra retirar.');
     }else{
-      // Retorno completo (fecha o que estava pendente neste lote)
+      // fecha o lote: o que voltou agora é o retorno final (o resto, se houver, já virou perda acima)
       p.tamanhosRetornados = tam;
       p.quantidadeRetornada = qtd;
       p.dataRetorno = dataRetorno;
@@ -1744,15 +1798,17 @@ function openRetornoForm(loteId){
       p.paga = pagoNaRetirada;
       p.dataPagamento = dataPag;
       p.pesoNaoCosturado = pesoNao;
-      if(pesoNao>0){
-        const precoKgTec = p.precoKgTecidoHerdado!=null ? p.precoKgTecidoHerdado : precoMedioTecidoPorProduto(p.produto);
-        const valorPerdaTecido = pesoNao * precoKgTec;
-        perdas.push({id:uid(), data:dataRetorno, produto:p.produto, quantidade:null, pesoKg:pesoNao, motivo:'Tecido não aproveitado (costura)', valor:valorPerdaTecido, funcionario:p.funcionario});
-        await savePerdas();
-      }
-      await saveProducao(); closeModal(); render(); showToast('Retorno registrado');
+      await saveProducao(); closeModal(); render(); showToast('Retorno registrado'+(qtdPerda>0?' e perda registrada':'')+'.');
     }
   };
+}
+
+function calcularPerdaNaoRetorno(p, qtd){
+  const materiaPrima = p.custoCorteHerdado!=null ? p.custoCorteHerdado : custoMedioMateriaPrimaPorProduto(p.produto);
+  const laborCorte = p.custoLaborCorteHerdado!=null ? p.custoLaborCorteHerdado : custoLaborCorteMedioPorProduto(p.produto);
+  const valorMateriaPrima = materiaPrima * qtd;
+  const valorCorte = laborCorte * qtd;
+  return {valorMateriaPrima, valorCorte, valorTotal: valorMateriaPrima + valorCorte};
 }
 
 function calcularPerdaRevisao(p, naoAprov, pesoDescartado){
@@ -1889,7 +1945,7 @@ function openPagamentoForm(funcNome){
 }
 
 function openPerdaForm(){
-  const MOTIVOS = ['Tecido defeituoso','Erro de corte','Erro de costura','Peça sem aproveitamento (revisão)','Tecido não aproveitado (costura)','Outro'];
+  const MOTIVOS = ['Tecido defeituoso','Erro de corte','Erro de costura','Peça sem aproveitamento (revisão)','Tecido não aproveitado (costura)','Peça não retornou (perda)','Outro'];
   openModal(`
     <h3>Registrar perda</h3>
     <div class="row2">
@@ -2075,7 +2131,7 @@ function openEditarUsuarioForm(uId){
 
 function openEditarPerdaForm(perdaId){
   const p = perdas.find(x=>x.id===perdaId);
-  const MOTIVOS = ['Tecido defeituoso','Erro de corte','Erro de costura','Peça sem aproveitamento (revisão)','Tecido não aproveitado (costura)','Outro'];
+  const MOTIVOS = ['Tecido defeituoso','Erro de corte','Erro de costura','Peça sem aproveitamento (revisão)','Tecido não aproveitado (costura)','Peça não retornou (perda)','Outro'];
   openModal(`
     <h3>Editar perda</h3>
     <div class="row2">
