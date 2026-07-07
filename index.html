@@ -30,20 +30,36 @@
     --accent:#4C7FC9;
     --accent-soft:#E8F0FC;
     --radius:10px;
+    --app-max:480px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0; background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; height:100%;}
   h1,h2,h3,.display{font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em;}
   .mono{font-family:'IBM Plex Mono',monospace;}
-  #app{max-width:480px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; position:relative; background:var(--bg);}
+  #app{max-width:var(--app-max); margin:0 auto; min-height:100vh; display:flex; flex-direction:column; position:relative; background:var(--bg);}
   .topbar{padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--surface);}
   .topbar h1{font-size:13px; margin:0; font-weight:600; color:var(--text); letter-spacing:.02em;}
   .topbar .date{font-size:11px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; flex-shrink:0;}
-  .tabbar-wrap{background:var(--surface); border-bottom:1px solid var(--border);}
+  .topbar-right{display:flex; align-items:center; gap:8px; flex-shrink:0;}
+  .body-shell{flex:1; display:flex; flex-direction:column; min-height:0;}
+  .tabbar-wrap{background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0;}
   .tabbar{display:flex; flex-wrap:wrap;}
   .tabbtn{flex:0 0 auto; background:none; border:none; padding:9px 10px; font-size:11.5px; font-family:'Inter',sans-serif; color:var(--text-dim); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap;}
   .tabbtn.active{color:var(--accent); border-bottom-color:var(--accent); font-weight:600;}
-  main{flex:1; padding:14px 14px 30px; overflow-y:auto;}
+  main{flex:1; padding:14px 14px 30px; overflow-y:auto; width:100%;}
+  @media (min-width:900px){
+    :root{--app-max:1180px;}
+    .body-shell{flex-direction:row; align-items:flex-start;}
+    .tabbar-wrap{width:210px; flex-shrink:0; border-bottom:none; border-right:1px solid var(--border); position:sticky; top:0; align-self:stretch;}
+    .tabbar{flex-direction:column; padding:10px 0;}
+    .tabbtn{width:100%; text-align:left; padding:11px 20px; border-bottom:none; border-left:3px solid transparent; font-size:12.5px;}
+    .tabbtn.active{border-left-color:var(--accent); border-bottom-color:transparent; background:var(--accent-soft);}
+    main{max-width:980px; margin:0 auto; padding:28px 34px 60px;}
+    .metric-grid{grid-template-columns:repeat(4,1fr);}
+    .card{padding:18px 22px;}
+    .modal-overlay{align-items:center;}
+    .modal{max-width:560px; border-radius:16px; max-height:85vh;}
+  }
   .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; margin-bottom:10px;}
   .metric-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;}
   .metric{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px;}
@@ -73,7 +89,7 @@
   .btn-danger{color:var(--costura); border-color:rgba(194,74,66,.35);}
   .btn-toggle{background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); font-size:12px; padding:7px 12px; border-radius:7px; cursor:pointer; flex:1; text-align:center;}
   .btn-toggle.active{background:var(--accent-soft); color:var(--accent); border-color:var(--accent); font-weight:600;}
-  .fab{position:fixed; bottom:20px; left:50%; transform:translateX(calc(-50% + 195px)); width:50px; height:50px; border-radius:50%; background:var(--accent); color:#fff; border:none; font-size:26px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(76,127,201,.4); cursor:pointer; z-index:40;}
+  .fab{position:fixed; bottom:24px; right:max(20px, calc((100vw - var(--app-max)) / 2 + 20px)); width:52px; height:52px; border-radius:50%; background:var(--accent); color:#fff; border:none; font-size:26px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(76,127,201,.4); cursor:pointer; z-index:40;}
   .empty{text-align:center; padding:30px 10px; color:var(--text-dim); font-size:13px;}
   .modal-overlay{position:fixed; inset:0; background:rgba(20,28,40,.4); display:flex; align-items:flex-end; justify-content:center; z-index:100;}
   .modal{background:var(--surface); width:100%; max-width:480px; border-radius:16px 16px 0 0; padding:18px 16px 22px; max-height:88vh; overflow-y:auto;}
@@ -104,29 +120,47 @@
   .rate-row{display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:12.5px; border-bottom:1px dashed var(--border);}
   .rate-row:last-child{border-bottom:none;}
   .filter-row{display:flex; gap:8px; margin-bottom:12px;}
+  #authScreen{display:none; min-height:100vh; align-items:center; justify-content:center; padding:20px;}
+  body.locked #app{display:none;}
+  body.locked #authScreen{display:flex;}
+  #userBadge{font-size:11px; color:var(--text-dim); display:flex; align-items:center; gap:6px;}
+  #userBadge .btn{padding:3px 9px; font-size:10px;}
+  body.role-colaborador [data-action^="del"],
+  body.role-colaborador [data-action^="editar"],
+  body.role-colaborador [data-action="desfazerPagamento"],
+  body.role-colaborador [data-action="reabrirCredito"],
+  body.role-colaborador [data-action="addRate"],
+  body.role-colaborador [data-action="novoInsumoExtra"],
+  body.role-colaborador [data-restrict="admin"]{display:none !important;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
-<body>
+<body class="locked">
 <div id="app">
   <div class="topbar">
     <h1>Controle de Produção JL Vestuário</h1>
-    <div class="date" id="topDate"></div>
+    <div class="topbar-right">
+      <div class="date" id="topDate"></div>
+      <div id="userBadge"></div>
+    </div>
   </div>
-  <div class="tabbar-wrap">
-    <nav class="tabbar" id="tabbar">
-      <button class="tabbtn active" data-tab="dashboard">Painel</button>
-      <button class="tabbtn" data-tab="producao">Produção</button>
-      <button class="tabbtn" data-tab="revisao">Revisão</button>
-      <button class="tabbtn" data-tab="pagamentos">Pagamentos</button>
-      <button class="tabbtn" data-tab="perdas">Perdas</button>
-      <button class="tabbtn" data-tab="materiaprima">Insumos / Fornecedores</button>
-      <button class="tabbtn" data-tab="config">Cadastro</button>
-    </nav>
+  <div class="body-shell">
+    <div class="tabbar-wrap">
+      <nav class="tabbar" id="tabbar">
+        <button class="tabbtn active" data-tab="dashboard">Painel</button>
+        <button class="tabbtn" data-tab="producao">Produção</button>
+        <button class="tabbtn" data-tab="revisao">Revisão</button>
+        <button class="tabbtn" data-restrict="admin" data-tab="pagamentos">Pagamentos</button>
+        <button class="tabbtn" data-restrict="admin" data-tab="perdas">Perdas</button>
+        <button class="tabbtn" data-restrict="admin" data-tab="materiaprima">Insumos / Fornecedores</button>
+        <button class="tabbtn" data-restrict="admin" data-tab="config">Cadastro</button>
+      </nav>
+    </div>
+    <main id="content"></main>
   </div>
-  <main id="content"></main>
   <button class="fab" id="fabBtn">+</button>
 </div>
+<div id="authScreen"></div>
 <div id="modalRoot"></div>
 <div class="toast" id="toast"></div>
 
@@ -185,6 +219,8 @@ let perdas = [];
 let config = [];
 let fornecedores = [];
 let insumosExtras = [];
+let usuarios = [];
+let currentUser = null;
 let activeTab = 'dashboard';
 let dashFiltroEtapa = 'todas';
 let dashFiltroFunc = 'todos';
@@ -301,6 +337,7 @@ async function loadAll(){
   config = await loadCollection('config', null);
   fornecedores = await loadCollection('fornecedores', migrateFornecedor);
   insumosExtras = await loadCollection('insumosExtras', migrateInsumoExtra);
+  usuarios = await loadCollection('usuarios', null);
   dataReady = true;
 }
 async function saveProducao(){ try{ await window.storage.set('producao', JSON.stringify(producao)); }catch(e){ showToast('Erro ao salvar'); } }
@@ -308,6 +345,76 @@ async function savePerdas(){ try{ await window.storage.set('perdas', JSON.string
 async function saveConfig(){ try{ await window.storage.set('config', JSON.stringify(config)); }catch(e){ showToast('Erro ao salvar'); } }
 async function saveFornecedores(){ try{ await window.storage.set('fornecedores', JSON.stringify(fornecedores)); }catch(e){ showToast('Erro ao salvar'); } }
 async function saveInsumosExtras(){ try{ await window.storage.set('insumosExtras', JSON.stringify(insumosExtras)); }catch(e){ showToast('Erro ao salvar'); } }
+async function saveUsuarios(){ try{ await window.storage.set('usuarios', JSON.stringify(usuarios)); }catch(e){ showToast('Erro ao salvar'); } }
+
+// ===================== LOGIN / PERMISSÕES =====================
+// Papéis: 'admin' (acesso total) · 'colaborador' (só Painel/Produção/Revisão, sem editar/excluir)
+function renderAuthScreen(){
+  const el = document.getElementById('authScreen');
+  if(usuarios.length===0){
+    el.innerHTML = `<div class="card" style="max-width:320px; width:100%;">
+      <h3 style="margin-top:0;">Criar administrador</h3>
+      <div class="item-sub" style="margin-bottom:14px;">Primeiro acesso: crie o usuário principal (acesso total ao app).</div>
+      <div class="field"><label>Nome</label><input id="setupNome" placeholder="Ex: Gabriel"></div>
+      <div class="field"><label>Senha</label><input id="setupSenha" type="password"></div>
+      <button class="btn btn-primary" style="width:100%;" id="btnSetup">Criar e entrar</button>
+    </div>`;
+    document.getElementById('btnSetup').onclick = async ()=>{
+      const nome = document.getElementById('setupNome').value.trim();
+      const senha = document.getElementById('setupSenha').value;
+      if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
+      const u = {id:uid(), nome, senha, papel:'admin'};
+      usuarios.push(u);
+      await saveUsuarios();
+      loginAs(u);
+    };
+  }else{
+    el.innerHTML = `<div class="card" style="max-width:320px; width:100%;">
+      <h3 style="margin-top:0;">Entrar</h3>
+      <div class="field"><label>Nome</label><input id="loginNome" placeholder="Seu nome"></div>
+      <div class="field"><label>Senha</label><input id="loginSenha" type="password"></div>
+      <button class="btn btn-primary" style="width:100%;" id="btnLogin">Entrar</button>
+    </div>`;
+    const tryLogin = ()=>{
+      const nome = document.getElementById('loginNome').value.trim();
+      const senha = document.getElementById('loginSenha').value;
+      const u = usuarios.find(x=>x.nome.toLowerCase()===nome.toLowerCase() && x.senha===senha);
+      if(!u){ showToast('Usuário ou senha incorretos'); return; }
+      loginAs(u);
+    };
+    document.getElementById('btnLogin').onclick = tryLogin;
+    document.getElementById('loginSenha').onkeydown = (e)=>{ if(e.key==='Enter') tryLogin(); };
+  }
+}
+function loginAs(u){
+  currentUser = u;
+  try{ localStorage.setItem('jl_session', u.id); }catch(e){}
+  applyAuthState();
+}
+function logout(){
+  currentUser = null;
+  try{ localStorage.removeItem('jl_session'); }catch(e){}
+  applyAuthState();
+}
+function updateUserBadge(){
+  const el = document.getElementById('userBadge');
+  if(!el) return;
+  if(!currentUser){ el.innerHTML=''; return; }
+  el.innerHTML = `${escapeHtml(currentUser.nome)}<button class="btn" id="btnLogout">Sair</button>`;
+  document.getElementById('btnLogout').onclick = logout;
+}
+function applyAuthState(){
+  document.body.classList.toggle('locked', !currentUser);
+  document.body.classList.remove('role-admin','role-colaborador');
+  if(currentUser) document.body.classList.add('role-'+currentUser.papel);
+  if(!currentUser){ renderAuthScreen(); return; }
+  if(currentUser.papel!=='admin' && ['pagamentos','perdas','materiaprima','config'].includes(activeTab)){
+    activeTab = 'dashboard';
+    document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab==='dashboard'));
+  }
+  updateUserBadge();
+  render();
+}
 function custoInsumosExtrasPorPeca(){
   return insumosExtras.reduce((s,i)=>s+Number(i.valorUnitario||0)*Number(i.quantidadePorPeca||0),0);
 }
@@ -562,7 +669,11 @@ function renderRevisao(){
           <div><div class="item-title">${escapeHtml(p.produto)}</div><div class="item-sub">${escapeHtml(p.funcionario)} · retornaram ${p.quantidadeRetornada} peças</div></div>
           <span class="tag tag-${p.etapa}">${STAGE_LABEL[p.etapa]}</span>
         </div>
-        <div class="item-actions"><button class="btn btn-primary" data-action="registrarRevisao" data-id="${p.id}">Registrar revisão</button></div>
+        <div class="item-actions">
+          <button class="btn btn-primary" data-action="registrarRevisao" data-id="${p.id}">Registrar revisão</button>
+          <button class="btn" data-action="editarLote" data-id="${p.id}">Editar</button>
+          <button class="btn btn-danger" data-action="delProducao" data-id="${p.id}" style="margin-left:auto;">Excluir</button>
+        </div>
       </div>`;
     });
     html += `</div>`;
@@ -580,7 +691,10 @@ function renderRevisao(){
           <div class="item-right">${p.quantidadeAproveitavel}/${p.quantidadeRetornada} aproveitáveis</div>
         </div>
         ${p.quantidadeNaoAproveitavel>0 ? `<div class="item-note" style="color:var(--perda)">${p.quantidadeNaoAproveitavel} peça(s) descartada(s)${p.pesoDescartado?(' · '+p.pesoDescartado+' kg'):''} · Prejuízo total: ${fmtMoney(p.valorPrejuizoTotal||0)}</div>` : ''}
-        <div class="item-actions"><button class="btn" data-action="editarRevisao" data-id="${p.id}">Editar</button></div>
+        <div class="item-actions">
+          <button class="btn" data-action="editarRevisao" data-id="${p.id}">Editar</button>
+          <button class="btn btn-danger" data-action="delProducao" data-id="${p.id}" style="margin-left:auto;">Excluir</button>
+        </div>
       </div>`;
     });
     html += `</div>`;
@@ -1098,6 +1212,26 @@ function renderConfig(){
       <input type="file" id="fileImportarExcel" accept=".xlsx" style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none;">
     </div>
   </div>`;
+
+  html += `<div class="section-title">Usuários do app (login)<button class="btn" data-action="novoUsuario">+ Usuário</button></div>`;
+  if(usuarios.length===0){
+    html += `<div class="empty">Nenhum usuário cadastrado.</div>`;
+  }else{
+    html += `<div class="card">`;
+    usuarios.forEach(u=>{
+      html += `<div class="item">
+        <div class="item-top">
+          <div><div class="item-title">${escapeHtml(u.nome)}</div><div class="item-sub">${u.papel==='admin'?'Administrador (acesso total)':'Colaborador (sem Pagamentos/Perdas/Insumos/Cadastro, sem editar ou excluir)'}</div></div>
+        </div>
+        <div class="item-actions">
+          <button class="btn" data-action="editarUsuario" data-id="${u.id}">Editar</button>
+          ${u.id!==currentUser?.id ? `<button class="btn btn-danger" data-action="delUsuario" data-id="${u.id}">Excluir</button>` : ''}
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
   if(config.length===0){
     html += `<div class="empty">Nenhuma costureira/funcionário cadastrado.<br>Toque em + para adicionar.</div>`;
     return html;
@@ -1183,6 +1317,14 @@ function attachDynamicHandlers(){
       }else if(action==='delInsumoExtra'){
         insumosExtras = insumosExtras.filter(i=>i.id!==id);
         await saveInsumosExtras(); render(); showToast('Insumo removido');
+      }else if(action==='novoUsuario'){
+        openUsuarioForm();
+      }else if(action==='editarUsuario'){
+        openEditarUsuarioForm(id);
+      }else if(action==='delUsuario'){
+        if(currentUser && currentUser.id===id){ showToast('Você não pode excluir seu próprio usuário'); return; }
+        usuarios = usuarios.filter(u=>u.id!==id);
+        await saveUsuarios(); render(); showToast('Usuário removido');
       }
     };
   });
@@ -1823,6 +1965,58 @@ function openEditarFuncionarioForm(funcId){
   };
 }
 
+function openUsuarioForm(){
+  openModal(`
+    <h3>Novo usuário</h3>
+    <div class="field"><label>Nome</label><input id="f_uNome" placeholder="Ex: Anna"></div>
+    <div class="field"><label>Senha</label><input id="f_uSenha" type="password"></div>
+    <div class="field"><label>Permissão</label><select id="f_uPapel">
+      <option value="colaborador">Colaborador (Painel, Produção e Revisão · sem editar/excluir)</option>
+      <option value="admin">Administrador (acesso total)</option>
+    </select></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="saveUsuario">Salvar</button>
+    </div>
+  `);
+  document.getElementById('saveUsuario').onclick = async ()=>{
+    const nome = document.getElementById('f_uNome').value.trim();
+    const senha = document.getElementById('f_uSenha').value;
+    const papel = document.getElementById('f_uPapel').value;
+    if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
+    if(usuarios.some(u=>u.nome.toLowerCase()===nome.toLowerCase())){ showToast('Já existe um usuário com esse nome'); return; }
+    usuarios.push({id:uid(), nome, senha, papel});
+    await saveUsuarios(); closeModal(); render(); showToast('Usuário criado');
+  };
+}
+
+function openEditarUsuarioForm(uId){
+  const u = usuarios.find(x=>x.id===uId);
+  openModal(`
+    <h3>Editar usuário</h3>
+    <div class="field"><label>Nome</label><input id="f_uNome" value="${escapeHtml(u.nome)}"></div>
+    <div class="field"><label>Senha</label><input id="f_uSenha" type="password" placeholder="Deixe em branco para manter"></div>
+    <div class="field"><label>Permissão</label><select id="f_uPapel">
+      <option value="colaborador" ${u.papel==='colaborador'?'selected':''}>Colaborador (Painel, Produção e Revisão · sem editar/excluir)</option>
+      <option value="admin" ${u.papel==='admin'?'selected':''}>Administrador (acesso total)</option>
+    </select></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="saveUsuarioEdit">Salvar</button>
+    </div>
+  `);
+  document.getElementById('saveUsuarioEdit').onclick = async ()=>{
+    const nome = document.getElementById('f_uNome').value.trim();
+    const senha = document.getElementById('f_uSenha').value;
+    if(!nome){ showToast('Preencha o nome'); return; }
+    u.nome = nome;
+    if(senha) u.senha = senha;
+    u.papel = document.getElementById('f_uPapel').value;
+    await saveUsuarios(); closeModal(); render(); showToast('Usuário atualizado');
+    if(currentUser && currentUser.id===u.id){ currentUser = u; updateUserBadge(); }
+  };
+}
+
 function openEditarPerdaForm(perdaId){
   const p = perdas.find(x=>x.id===perdaId);
   const MOTIVOS = ['Tecido defeituoso','Erro de corte','Erro de costura','Peça sem aproveitamento (revisão)','Tecido não aproveitado (costura)','Outro'];
@@ -1928,7 +2122,13 @@ document.getElementById('fabBtn').onclick = openFormForTab;
 (async function init(){
   render();
   await loadAll();
-  render();
+  let savedId = null;
+  try{ savedId = localStorage.getItem('jl_session'); }catch(e){}
+  if(savedId){
+    const u = usuarios.find(x=>x.id===savedId);
+    if(u) currentUser = u;
+  }
+  applyAuthState();
 })();
 </script>
 </body>
