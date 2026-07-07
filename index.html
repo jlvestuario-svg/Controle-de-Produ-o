@@ -114,7 +114,7 @@
   .bar-track{flex:1; height:8px; background:var(--surface-2); border-radius:4px; overflow:hidden;}
   .bar-fill{height:100%; border-radius:4px;}
   .bar-val{width:34px; text-align:right; font-family:'IBM Plex Mono',monospace; flex-shrink:0;}
-  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--surface); border:1px solid var(--border); padding:9px 16px; border-radius:8px; font-size:12.5px; z-index:200; opacity:0; transition:opacity .25s;}
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--surface); border:1px solid var(--border); padding:9px 16px; border-radius:8px; font-size:12.5px; z-index:200; opacity:0; transition:opacity .25s; pointer-events:none;}
   .toast.show{opacity:1;}
   select option{background:var(--surface);}
   .rate-row{display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:12.5px; border-bottom:1px dashed var(--border);}
@@ -281,6 +281,9 @@ function migrateLote(p){
     if(p.metaRendimentoBobina===undefined) p.metaRendimentoBobina = 0;
     if(p.rendimentoObtido===undefined) p.rendimentoObtido = p.quantidadeRetornada!=null ? p.quantidadeRetornada : null;
     if(p.diferencaRendimento===undefined) p.diferencaRendimento = (p.metaRendimentoBobina>0 && p.quantidadeRetornada!=null) ? p.quantidadeRetornada-p.metaRendimentoBobina : null;
+  }
+  if(p.etapa!=='corte' && p.quantidadeEnviadaOriginal===undefined){
+    p.quantidadeEnviadaOriginal = p.quantidadeEnviada;
   }
   if(p.status) return p;
   p.quantidadeEnviada = p.quantidade;
@@ -626,7 +629,12 @@ function renderProducao(){
     }
     if(!isCorte && p.tamanhosEnviados){
       const te = p.tamanhosEnviados;
-      html += `<div class="item-note">Enviado: P ${te.P||0} · M ${te.M||0} · G ${te.G||0} · GG ${te.GG||0}</div>`;
+      const label = p.status==='enviado' ? 'Aguardando retirada' : 'Enviado';
+      html += `<div class="item-note">${label}: P ${te.P||0} · M ${te.M||0} · G ${te.G||0} · GG ${te.GG||0}</div>`;
+    }
+    if(!isCorte && p.status==='enviado' && Number(p.quantidadeEnviadaOriginal)>Number(p.quantidadeEnviada)){
+      const jaRetirado = p.quantidadeEnviadaOriginal - p.quantidadeEnviada;
+      html += `<div class="item-note" style="color:var(--retornado)">${jaRetirado} peça(s) já retirada(s) em coleta(s) anterior(es) deste envio</div>`;
     }
     if(!isCorte && p.tamanhosRetornados){
       const tr = p.tamanhosRetornados;
@@ -1609,6 +1617,7 @@ function openProducaoForm(){
       novoLote.tamanhosEnviados = {};
       TAMS.forEach(t=>{ novoLote.tamanhosEnviados[t] = Number(campoEtapaEnvio.querySelector('.f_tamEnv'+t).value)||0; });
       novoLote.quantidadeEnviada = somaTam(novoLote.tamanhosEnviados);
+      novoLote.quantidadeEnviadaOriginal = novoLote.quantidadeEnviada;
       if(novoLote.quantidadeEnviada<=0){ showToast('Informe a quantidade por tamanho'); return; }
       const loteOrigemSel = campoEtapaEnvio.querySelector('#f_loteCorteOrigem');
       const loteOrigemId = loteOrigemSel ? loteOrigemSel.value : '';
@@ -1640,8 +1649,8 @@ function openRetornoForm(loteId){
   const isCorte = p.etapa==='corte';
   openModal(`
     <h3>Registrar retorno — ${escapeHtml(p.produto)}</h3>
-    <div class="field hint">${isCorte ? `Bobina enviada: ${p.pesoBobinas||0} kg, cor ${escapeHtml(p.cor||'-')}.` : `Enviado: P ${p.tamanhosEnviados?p.tamanhosEnviados.P:0} · M ${p.tamanhosEnviados?p.tamanhosEnviados.M:0} · G ${p.tamanhosEnviados?p.tamanhosEnviados.G:0} · GG ${p.tamanhosEnviados?p.tamanhosEnviados.GG:0}.`} As que não retornarem ficam como perda sua, sem afetar o pagamento.</div>
-    <div class="field"><label>${isCorte?'Quanto rendeu de cada tamanho':'Quanto retornou de cada tamanho'}</label></div>
+    <div class="field hint">${isCorte ? `Bobina enviada: ${p.pesoBobinas||0} kg, cor ${escapeHtml(p.cor||'-')}.` : `Ainda aguardando: P ${p.tamanhosEnviados?p.tamanhosEnviados.P:0} · M ${p.tamanhosEnviados?p.tamanhosEnviados.M:0} · G ${p.tamanhosEnviados?p.tamanhosEnviados.G:0} · GG ${p.tamanhosEnviados?p.tamanhosEnviados.GG:0}. Se a costureira só trouxe parte, preencha só o que voltou agora — o restante continua aguardando coleta.`}</div>
+    <div class="field"><label>${isCorte?'Quanto rendeu de cada tamanho':'Quanto voltou agora de cada tamanho'}</label></div>
     <div class="row4">
       ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_ret${t}" type="number" min="0" value="${isCorte?0:(p.tamanhosEnviados?p.tamanhosEnviados[t]:0)}"></div>`).join('')}
     </div>
@@ -1664,29 +1673,76 @@ function openRetornoForm(loteId){
     const tam = {};
     TAMS.forEach(t=>{ tam[t] = Number(document.querySelector('.f_ret'+t).value)||0; });
     const qtd = somaTam(tam);
-    if(isCorte) p.tamanhosCortados = tam;
-    else p.tamanhosRetornados = tam;
     const dataRetorno = document.getElementById('f_dataRet').value;
-    const pagoNaRetirada = chk.checked;
-    p.quantidadeRetornada = qtd;
-    p.dataRetorno = dataRetorno;
-    p.valorTotal = qtd * Number(p.valorUnit||0);
-    p.status = 'retornado';
-    p.paga = pagoNaRetirada;
-    p.dataPagamento = pagoNaRetirada ? document.getElementById('f_dataPag').value : null;
-    if(isCorte && qtd>0){
-      p.consumoTecidoPorPeca = Number(p.pesoBobinas||0) / qtd;
-      p.consumoRibanaPorPeca = Number(p.pesoRibana||0) / qtd;
-      p.custoTecidoPorPeca = p.consumoTecidoPorPeca * Number(p.precoKgTecido||0);
-      p.custoRibanaPorPeca = p.consumoRibanaPorPeca * Number(p.precoKgRibana||0);
-      p.custoInsumosExtrasPorPeca = custoInsumosExtrasPorPeca();
-      p.custoMateriaPrimaPorPeca = p.custoTecidoPorPeca + p.custoRibanaPorPeca + p.custoInsumosExtrasPorPeca;
-      p.custoCompletoPorPeca = p.custoMateriaPrimaPorPeca + Number(p.valorUnit||0);
-      p.rendimentoObtido = qtd;
-      p.diferencaRendimento = Number(p.metaRendimentoBobina||0)>0 ? qtd - Number(p.metaRendimentoBobina) : null;
+    const pagoNaRetirada = document.getElementById('f_pagoRetirada').checked;
+    const dataPag = pagoNaRetirada ? document.getElementById('f_dataPag').value : null;
+
+    if(qtd<=0){ showToast('Informe ao menos uma peça'); return; }
+
+    if(isCorte){
+      p.tamanhosCortados = tam;
+      p.quantidadeRetornada = qtd;
+      p.dataRetorno = dataRetorno;
+      p.valorTotal = qtd * Number(p.valorUnit||0);
+      p.status = 'retornado';
+      p.paga = pagoNaRetirada;
+      p.dataPagamento = dataPag;
+      if(qtd>0){
+        p.consumoTecidoPorPeca = Number(p.pesoBobinas||0) / qtd;
+        p.consumoRibanaPorPeca = Number(p.pesoRibana||0) / qtd;
+        p.custoTecidoPorPeca = p.consumoTecidoPorPeca * Number(p.precoKgTecido||0);
+        p.custoRibanaPorPeca = p.consumoRibanaPorPeca * Number(p.precoKgRibana||0);
+        p.custoInsumosExtrasPorPeca = custoInsumosExtrasPorPeca();
+        p.custoMateriaPrimaPorPeca = p.custoTecidoPorPeca + p.custoRibanaPorPeca + p.custoInsumosExtrasPorPeca;
+        p.custoCompletoPorPeca = p.custoMateriaPrimaPorPeca + Number(p.valorUnit||0);
+        p.rendimentoObtido = qtd;
+        p.diferencaRendimento = Number(p.metaRendimentoBobina||0)>0 ? qtd - Number(p.metaRendimentoBobina) : null;
+      }
+      await saveProducao(); closeModal(); render(); showToast('Retorno registrado');
+      return;
     }
-    if(!isCorte){
-      const pesoNao = Number(document.getElementById('f_pesoNao').value)||0;
+
+    // Costura: pode ser retorno parcial
+    const pesoNao = Number(document.getElementById('f_pesoNao').value)||0;
+    const pendente = {};
+    TAMS.forEach(t=>{ pendente[t] = Math.max(0, Number(p.tamanhosEnviados?p.tamanhosEnviados[t]:0) - (tam[t]||0)); });
+    const totalPendente = somaTam(pendente);
+
+    if(totalPendente > 0){
+      // Retorno parcial: separa o que voltou agora num registro próprio (segue o fluxo normal de revisão/pagamento)
+      const registro = JSON.parse(JSON.stringify(p));
+      registro.id = uid();
+      registro.tamanhosEnviados = {...tam};
+      registro.tamanhosRetornados = {...tam};
+      registro.quantidadeEnviada = qtd;
+      registro.quantidadeRetornada = qtd;
+      registro.dataRetorno = dataRetorno;
+      registro.status = 'retornado';
+      registro.paga = pagoNaRetirada;
+      registro.dataPagamento = dataPag;
+      registro.valorTotal = qtd * Number(p.valorUnit||0);
+      registro.pesoNaoCosturado = pesoNao;
+      producao.push(registro);
+      if(pesoNao>0){
+        const precoKgTec = p.precoKgTecidoHerdado!=null ? p.precoKgTecidoHerdado : precoMedioTecidoPorProduto(p.produto);
+        const valorPerdaTecido = pesoNao * precoKgTec;
+        perdas.push({id:uid(), data:dataRetorno, produto:p.produto, quantidade:null, pesoKg:pesoNao, motivo:'Tecido não aproveitado (costura)', valor:valorPerdaTecido, funcionario:p.funcionario});
+        await savePerdas();
+      }
+      // o lote original continua "enviado", só com o que ainda falta ser retirado
+      p.tamanhosEnviados = pendente;
+      p.quantidadeEnviada = totalPendente;
+      await saveProducao(); closeModal(); render();
+      showToast('Retorno parcial registrado. Ainda faltam '+totalPendente+' peça(s) pra retirar.');
+    }else{
+      // Retorno completo (fecha o que estava pendente neste lote)
+      p.tamanhosRetornados = tam;
+      p.quantidadeRetornada = qtd;
+      p.dataRetorno = dataRetorno;
+      p.valorTotal = qtd * Number(p.valorUnit||0);
+      p.status = 'retornado';
+      p.paga = pagoNaRetirada;
+      p.dataPagamento = dataPag;
       p.pesoNaoCosturado = pesoNao;
       if(pesoNao>0){
         const precoKgTec = p.precoKgTecidoHerdado!=null ? p.precoKgTecidoHerdado : precoMedioTecidoPorProduto(p.produto);
@@ -1694,8 +1750,8 @@ function openRetornoForm(loteId){
         perdas.push({id:uid(), data:dataRetorno, produto:p.produto, quantidade:null, pesoKg:pesoNao, motivo:'Tecido não aproveitado (costura)', valor:valorPerdaTecido, funcionario:p.funcionario});
         await savePerdas();
       }
+      await saveProducao(); closeModal(); render(); showToast('Retorno registrado');
     }
-    await saveProducao(); closeModal(); render(); showToast('Retorno registrado');
   };
 }
 
