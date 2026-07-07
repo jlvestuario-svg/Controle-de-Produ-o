@@ -130,35 +130,45 @@
 <div id="modalRoot"></div>
 <div class="toast" id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
 // ===================================================================
-// CONFIGURAÇÃO DA NUVEM (Google Sheets)
-// Cole aqui o link de implantação (deployment) do seu Apps Script.
-// Sem esse link preenchido, o app funciona só localmente (sem sincronizar).
+// CONFIGURAÇÃO DA NUVEM (Firebase)
+// Cole aqui o objeto de configuração do seu projeto Firebase.
+// Sem isso preenchido, o app funciona só localmente (sem sincronizar).
 // ===================================================================
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyfPO5VL4Ri33Rwy_ZQSrfY_rpKldXDfwrag9YeitFzMyaMLTFLaqn-P9ViR9fOuusf/exec';
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBE02mRJjInJHMizSQK236W4Rb-nv2aLMw",
+  authDomain: "controle-cfe01.firebaseapp.com",
+  projectId: "controle-cfe01",
+  storageBucket: "controle-cfe01.firebasestorage.app",
+  messagingSenderId: "1094529486101",
+  appId: "1:1094529486101:web:b97496ff43e6e9a554ed1c"
+};
 
-async function cloudRequest(action, key, value){
-  if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('COLE_AQUI')===0){
-    throw new Error('APPS_SCRIPT_URL não configurado');
+let firebaseDb = null;
+function getFirebaseDb(){
+  if(firebaseDb) return firebaseDb;
+  if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey==='COLE_AQUI'){
+    throw new Error('FIREBASE_CONFIG não configurado');
   }
-  const res = await fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain;charset=utf-8'},
-    body: JSON.stringify({action, key, value})
-  });
-  return res.json();
+  firebase.initializeApp(FIREBASE_CONFIG);
+  firebaseDb = firebase.firestore();
+  return firebaseDb;
 }
 
 if(typeof window.storage === 'undefined' || !window.storage){
   window.storage = {
     async get(key){
-      const r = await cloudRequest('get', key);
-      if(r && r.value!=null) return {key, value:r.value};
-      return null;
+      const db = getFirebaseDb();
+      const snap = await db.collection('controle_producao_dados').doc(key).get();
+      if(!snap.exists) return null;
+      return {key, value: snap.data().value};
     },
     async set(key, value){
-      await cloudRequest('set', key, value);
+      const db = getFirebaseDb();
+      await db.collection('controle_producao_dados').doc(key).set({value});
       return {key, value};
     }
   };
