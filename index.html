@@ -83,6 +83,11 @@
   .item-right{text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; white-space:nowrap;}
   .item-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:center;}
   .item-note{font-size:11.5px; color:var(--text-dim); margin-top:6px;}
+  .subitem{margin-top:10px; padding:8px 0 8px 10px; border-left:2px solid var(--border);}
+  .subitem-label{font-size:10.5px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:3px;}
+  .subitem-row{font-size:12px; margin-top:1px;}
+  .subitem-actions{display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;}
+  .subitem-actions .btn{padding:4px 9px; font-size:10.5px;}
   .btn{border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:11.5px; padding:6px 10px; border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif;}
   .btn:active{transform:scale(0.97);}
   .btn-primary{background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600;}
@@ -284,6 +289,9 @@ function migrateLote(p){
   }
   if(p.etapa!=='corte' && p.quantidadeEnviadaOriginal===undefined){
     p.quantidadeEnviadaOriginal = p.quantidadeEnviada;
+  }
+  if(p.envioGrupoId===undefined){
+    p.envioGrupoId = p.id;
   }
   if(p.status) return p;
   p.quantidadeEnviada = p.quantidade;
@@ -585,77 +593,107 @@ function buildChartSvg(base){
 }
 
 function renderProducao(){
-  let lista = [...producao];
-  if(producaoFiltro==='ativos') lista = lista.filter(p=>!p.paga);
-  else lista = lista.filter(p=>p.paga);
-  lista.sort((a,b)=> b.dataEnvio.localeCompare(a.dataEnvio));
+  // agrupa por envio original (envioGrupoId), assim retiradas parciais do mesmo envio ficam num só card
+  const grupos = {};
+  producao.forEach(p=>{
+    const key = p.envioGrupoId || p.id;
+    if(!grupos[key]) grupos[key] = [];
+    grupos[key].push(p);
+  });
+  const grupoConcluido = g => g.every(p=>p.paga && p.status!=='enviado');
+
+  let listaGrupos = Object.values(grupos);
+  listaGrupos = producaoFiltro==='ativos' ? listaGrupos.filter(g=>!grupoConcluido(g)) : listaGrupos.filter(g=>grupoConcluido(g));
+  listaGrupos.sort((a,b)=> b[0].dataEnvio.localeCompare(a[0].dataEnvio));
 
   let html = `<div class="filter-row">
     <button class="btn-toggle ${producaoFiltro==='ativos'?'active':''}" id="btnFiltroAtivos">Em produção</button>
     <button class="btn-toggle ${producaoFiltro==='concluidos'?'active':''}" id="btnFiltroConcluidos">Concluídos</button>
   </div>`;
 
-  if(lista.length===0){
+  if(listaGrupos.length===0){
     html += `<div class="empty">Nenhum lote nesta lista.</div>`;
     return html;
   }
   html += `<div class="card">`;
-  lista.forEach(p=>{
-    const isCorte = p.etapa==='corte';
+  listaGrupos.forEach(g=>{
+    const head = g[0];
+    const isCorte = head.etapa==='corte';
+    const pendente = g.find(p=>p.status==='enviado');
+    const finalizados = g.filter(p=>p.status!=='enviado').sort((a,b)=> (a.dataRetorno||'').localeCompare(b.dataRetorno||''));
+    const statusGeral = pendente ? 'enviado' : (finalizados.length>0 && finalizados.every(p=>p.status==='revisado') ? 'revisado' : 'retornado');
+
     html += `<div class="item">
       <div class="item-top">
         <div>
-          <div class="item-title">${escapeHtml(p.produto)}${isCorte?(' · '+escapeHtml(p.cor||'-')):''}</div>
-          <div class="item-sub">${escapeHtml(p.funcionario)} · enviado ${fmtDateBR(p.dataEnvio)}${isCorte&&p.pesoBobinas?(' · '+p.pesoBobinas+' kg'):''}</div>
+          <div class="item-title">${escapeHtml(head.produto)}${isCorte?(' · '+escapeHtml(head.cor||'-')):''}</div>
+          <div class="item-sub">${escapeHtml(head.funcionario)} · enviado ${fmtDateBR(head.dataEnvio)}${isCorte&&head.pesoBobinas?(' · '+head.pesoBobinas+' kg'):''}</div>
         </div>
         <div class="item-right">
-          <span class="tag tag-${p.etapa}">${STAGE_LABEL[p.etapa]}</span><br>
-          <span class="tag tag-${p.status}" style="margin-top:4px;">${STATUS_LABEL[p.status]}</span>
+          <span class="tag tag-${head.etapa}">${STAGE_LABEL[head.etapa]}</span><br>
+          <span class="tag tag-${statusGeral}" style="margin-top:4px;">${STATUS_LABEL[statusGeral]}</span>
         </div>
       </div>`;
-    if(isCorte && p.tamanhosSolicitados){
-      const ts = p.tamanhosSolicitados;
-      const pedidos = TAMS.filter(t=>ts[t]).join(', ');
-      html += `<div class="item-note">Tamanhos pedidos: ${pedidos||'-'}</div>`;
-    }
-    if(isCorte && p.tamanhosCortados){
-      const tc = p.tamanhosCortados;
-      html += `<div class="item-note">Rendeu: P ${tc.P||0} · M ${tc.M||0} · G ${tc.G||0} · GG ${tc.GG||0}${p.pesoBobinas?(' · '+(p.quantidadeRetornada/p.pesoBobinas).toFixed(1)+' pç/kg'):''}</div>`;
-      if(Number(p.metaRendimentoBobina)>0){
-        const diff = p.diferencaRendimento!=null ? p.diferencaRendimento : (p.quantidadeRetornada-p.metaRendimentoBobina);
-        const emoji = diff>0?'🟢':(diff<0?'🔴':'🟡');
-        html += `<div class="item-note">${emoji} Meta: ${p.metaRendimentoBobina} pç · Real: ${p.rendimentoObtido!=null?p.rendimentoObtido:p.quantidadeRetornada} pç · Diferença: ${diff>=0?'+':''}${diff}</div>`;
+
+    if(isCorte){
+      // corte nunca é dividido em retiradas parciais: card único, igual antes
+      const p = head;
+      if(p.tamanhosSolicitados){
+        const ts = p.tamanhosSolicitados;
+        const pedidos = TAMS.filter(t=>ts[t]).join(', ');
+        html += `<div class="item-note">Tamanhos pedidos: ${pedidos||'-'}</div>`;
       }
+      if(p.tamanhosCortados){
+        const tc = p.tamanhosCortados;
+        html += `<div class="item-note">Rendeu: P ${tc.P||0} · M ${tc.M||0} · G ${tc.G||0} · GG ${tc.GG||0}${p.pesoBobinas?(' · '+(p.quantidadeRetornada/p.pesoBobinas).toFixed(1)+' pç/kg'):''}</div>`;
+        if(Number(p.metaRendimentoBobina)>0){
+          const diff = p.diferencaRendimento!=null ? p.diferencaRendimento : (p.quantidadeRetornada-p.metaRendimentoBobina);
+          const emoji = diff>0?'🟢':(diff<0?'🔴':'🟡');
+          html += `<div class="item-note">${emoji} Meta: ${p.metaRendimentoBobina} pç · Real: ${p.rendimentoObtido!=null?p.rendimentoObtido:p.quantidadeRetornada} pç · Diferença: ${diff>=0?'+':''}${diff}</div>`;
+        }
+      }
+      if(p.status!=='enviado'){
+        html += `<div class="item-note">Retornaram ${p.quantidadeRetornada||0} peças · ${fmtMoney(p.valorTotal)} · ${p.paga?('pago em '+fmtDateBR(p.dataPagamento)):'pendente'}</div>`;
+      }
+      html += `<div class="item-actions">`;
+      if(p.status==='enviado') html += `<button class="btn btn-primary" data-action="registrarRetorno" data-id="${p.id}">Registrar retorno</button>`;
+      html += `<button class="btn" data-action="editarLote" data-id="${p.id}">Editar</button>`;
+      if(p.paga) html += `<button class="btn" data-action="desfazerPagamento" data-id="${p.id}">Desfazer pagamento</button>`;
+      html += `<button class="btn btn-danger" data-action="delProducao" data-id="${p.id}" style="margin-left:auto;">Excluir</button>`;
+      html += `</div>`;
+    }else{
+      // costura: mostra o que ainda falta retirar (se houver) e o histórico de retiradas já feitas deste envio
+      if(pendente){
+        const te = pendente.tamanhosEnviados||{};
+        html += `<div class="item-note">Aguardando retirada: P ${te.P||0} · M ${te.M||0} · G ${te.G||0} · GG ${te.GG||0}</div>`;
+        if(finalizados.length>0){
+          const jaRetirado = finalizados.reduce((s,f)=>s+Number(f.quantidadeRetornada||0),0);
+          html += `<div class="item-note" style="color:var(--retornado)">${jaRetirado} peça(s) já retirada(s) em ${finalizados.length} coleta(s) anterior(es)</div>`;
+        }
+        html += `<div class="item-actions">
+          <button class="btn btn-primary" data-action="registrarRetorno" data-id="${pendente.id}">Registrar retorno</button>
+          <button class="btn" data-action="editarLote" data-id="${pendente.id}">Editar</button>
+          <button class="btn btn-danger" data-action="delProducao" data-id="${pendente.id}" style="margin-left:auto;">Excluir</button>
+        </div>`;
+      }
+      finalizados.forEach(f=>{
+        const tr = f.tamanhosRetornados||{};
+        const tamStr = TAMS.filter(t=>Number(tr[t])>0).map(t=>t+' '+tr[t]).join(' · ');
+        html += `<div class="subitem">
+          <div class="subitem-label">Retirada de ${fmtDateBR(f.dataRetorno)}</div>
+          <div class="subitem-row">${f.quantidadeRetornada||0} peça(s)${tamStr?(' · '+tamStr):''} · ${fmtMoney(f.valorTotal)} · ${f.paga?('pago em '+fmtDateBR(f.dataPagamento)):'pendente'}</div>
+          ${Number(f.pesoNaoCosturado)>0?`<div class="subitem-row" style="color:var(--perda)">Peso sem aproveitamento: ${f.pesoNaoCosturado} kg</div>`:''}
+          ${f.status==='revisado' && Number(f.quantidadeNaoAproveitavel)>0?`<div class="subitem-row" style="color:var(--perda)">${f.quantidadeNaoAproveitavel} peça(s) sem aproveitamento · crédito de ${fmtMoney(f.valorCredito)} · ${f.creditoAplicado?'já abatido':'ainda não abatido'}</div>`:''}
+          <div class="subitem-actions">
+            <button class="btn" data-action="editarLote" data-id="${f.id}">Editar</button>
+            ${f.paga?`<button class="btn" data-action="desfazerPagamento" data-id="${f.id}">Desfazer pagamento</button>`:''}
+            ${f.status==='revisado' && f.creditoAplicado && Number(f.valorCredito)>0?`<button class="btn" data-action="reabrirCredito" data-id="${f.id}">Reabrir crédito</button>`:''}
+            <button class="btn btn-danger" data-action="delProducao" data-id="${f.id}" style="margin-left:auto;">Excluir</button>
+          </div>
+        </div>`;
+      });
     }
-    if(!isCorte && p.tamanhosEnviados){
-      const te = p.tamanhosEnviados;
-      const label = p.status==='enviado' ? 'Aguardando retirada' : 'Enviado';
-      html += `<div class="item-note">${label}: P ${te.P||0} · M ${te.M||0} · G ${te.G||0} · GG ${te.GG||0}</div>`;
-    }
-    if(!isCorte && p.status==='enviado' && Number(p.quantidadeEnviadaOriginal)>Number(p.quantidadeEnviada)){
-      const jaRetirado = p.quantidadeEnviadaOriginal - p.quantidadeEnviada;
-      html += `<div class="item-note" style="color:var(--retornado)">${jaRetirado} peça(s) já retirada(s) em coleta(s) anterior(es) deste envio</div>`;
-    }
-    if(!isCorte && p.tamanhosRetornados){
-      const tr = p.tamanhosRetornados;
-      html += `<div class="item-note">Retornou: P ${tr.P||0} · M ${tr.M||0} · G ${tr.G||0} · GG ${tr.GG||0}</div>`;
-    }
-    if(!isCorte && Number(p.pesoNaoCosturado)>0){
-      html += `<div class="item-note" style="color:var(--perda)">Peso sem aproveitamento: ${p.pesoNaoCosturado} kg</div>`;
-    }
-    if(p.status!=='enviado'){
-      html += `<div class="item-note">Retornaram ${p.quantidadeRetornada||0} peças · ${fmtMoney(p.valorTotal)} · ${p.paga?('pago em '+fmtDateBR(p.dataPagamento)):'pendente'}</div>`;
-    }
-    if(p.status==='revisado' && Number(p.quantidadeNaoAproveitavel)>0){
-      html += `<div class="item-note" style="color:var(--perda)">${p.quantidadeNaoAproveitavel} peça(s) sem aproveitamento · crédito de ${fmtMoney(p.valorCredito)} · ${p.creditoAplicado?'já abatido':'ainda não abatido'}</div>`;
-    }
-    html += `<div class="item-actions">`;
-    if(p.status==='enviado') html += `<button class="btn btn-primary" data-action="registrarRetorno" data-id="${p.id}">Registrar retorno</button>`;
-    html += `<button class="btn" data-action="editarLote" data-id="${p.id}">Editar</button>`;
-    if(p.paga) html += `<button class="btn" data-action="desfazerPagamento" data-id="${p.id}">Desfazer pagamento</button>`;
-    if(p.status==='revisado' && p.creditoAplicado && Number(p.valorCredito)>0) html += `<button class="btn" data-action="reabrirCredito" data-id="${p.id}">Reabrir crédito</button>`;
-    html += `<button class="btn btn-danger" data-action="delProducao" data-id="${p.id}" style="margin-left:auto;">Excluir</button>`;
-    html += `</div></div>`;
+    html += `</div>`;
   });
   html += `</div>`;
   return html;
@@ -1616,6 +1654,7 @@ function openProducaoForm(){
       quantidadeEnviada:0, quantidadeRetornada:null, dataRetorno:null, valorTotal:0,
       quantidadeAproveitavel:null, quantidadeNaoAproveitavel:0, valorCredito:0, creditoAplicado:false,
       paga:false, dataPagamento:null, status:'enviado'};
+    novoLote.envioGrupoId = novoLote.id;
     if(etapa==='corte'){
       novoLote.cor = document.getElementById('f_cor').value.trim();
       novoLote.pesoBobinas = Number(document.getElementById('f_peso').value)||0;
