@@ -185,6 +185,7 @@
         <button class="tabbtn" data-restrict="admin" data-tab="pagamentos">Pagamentos</button>
         <button class="tabbtn" data-restrict="admin" data-tab="perdas">Perdas</button>
         <button class="tabbtn" data-restrict="admin" data-tab="materiaprima">Insumos / Fornecedores</button>
+        <button class="tabbtn" data-restrict="admin" data-tab="contaspagar">Contas a Pagar</button>
         <button class="tabbtn" data-restrict="admin" data-tab="financeiro">Financeiro</button>
         <button class="tabbtn" data-restrict="admin" data-tab="config">Cadastro</button>
       </nav>
@@ -254,6 +255,8 @@ let fornecedores = [];
 let insumosExtras = [];
 let usuarios = [];
 let financeiro = {};
+let contasPagar = [];
+let contasAprendizado = {};
 let currentUser = null;
 let activeTab = 'dashboard';
 let dashFiltroEtapa = 'todas';
@@ -457,6 +460,163 @@ async function saveFinanceiro(){
   try{ await window.storage.set('financeiroData', JSON.stringify(financeiro)); }
   catch(e){ showToast('Erro ao salvar dados financeiros'); }
 }
+
+// ===================== CONTAS A PAGAR =====================
+function finAllLeaves(){
+  // achata a árvore do Financeiro numa lista {key,label,path} pra usar no seletor de categoria
+  const out = [];
+  function walk(nodes, path){
+    nodes.forEach(node=>{
+      const p = path ? path+' › '+node.label : node.label;
+      if(node.children) walk(node.children, path);
+      else out.push({key:node.key, label:node.label, path:p});
+    });
+  }
+  walk(FIN_TREE, '');
+  walk(FIN_INVEST_TREE.children, FIN_INVEST_TREE.label);
+  out.push({key:'receitasNaoOp', label:'Receitas não Operacionais', path:''});
+  out.push({key:'despesasNaoOp', label:'Despesas não Operacionais', path:''});
+  out.push({key:'retiradaLucros', label:'Retirada de Lucros', path:''});
+  return out;
+}
+function normalizeTxt(s){
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+const CONTAS_KEYWORD_MAP = {
+  cmv: ['materia prima','tecido','ribana','malha','moletom fornecedor'],
+  frete: ['frete','correios','sedex','transportadora'],
+  simples: ['pgdas','simples nacional',' das '],
+  icms: ['icms'],
+  comissoes: ['comissao','taxa marketplace','tarifa venda','comissao shopee','comissao mercado livre','comissao tiktok'],
+  taxaCartao: ['maquininha','taxa de cartao','adquirente','taxa cartao de credito'],
+  embalagens: ['embalagem','saco plastico','caixa papelao','etiqueta','sacola'],
+  maoObraTerc: ['costureira','cortador','mao de obra terceirizada','terceirizado','colaboradora','colaborador'],
+  outrosCV: [],
+  prolabore: ['pro-labore','pro labore','retirada socio','retirada de lucro','vale pagamento'],
+  salarios: ['salario','folha de pagamento'],
+  gps: ['gps'],
+  fgts: ['fgts'],
+  ferias: ['ferias'],
+  decimoTerceiro: ['13 salario','decimo terceiro','13o salario'],
+  premiacoes: ['premiacao','bonus'],
+  horasExtras: ['hora extra'],
+  energia: ['energia','cpfl','luz'],
+  agua: ['agua','sabesp'],
+  telefone: ['telefone','internet','vivo','claro','tim ','net '],
+  combustivel: ['combustivel','gasolina','posto','etanol'],
+  seguroVeic: ['seguro do carro','seguro carro','ipva','multa'],
+  manutVeic: ['manutencao veiculo','oficina','pneu','despesa carro','despesa de carro','estacionamento'],
+  matEscritorio: ['material de escritorio','papelaria','material de papelaria'],
+  matLimpeza: ['material de limpeza','produto de limpeza','produtos de limpeza'],
+  depreciacao: ['depreciacao'],
+  grupoDesafio: ['grupo desafio'],
+  cursos: ['curso','treinamento'],
+  advogado: ['advogado','honorarios advocaticios'],
+  contador: ['contador','contabilidade','honorarios contabeis','ewerton'],
+  seguranca: ['seguranca','monitoramento'],
+  programador: ['programador','desenvolvedor','software','sistema','vectorizer'],
+  faxineira: ['faxina','faxineira','diarista'],
+  sindicatos: ['sindicato'],
+  associacoes: ['associacao'],
+  viagens: ['viagem','passagem','hospedagem'],
+  iptu: ['iptu'],
+  taxasPref: ['prefeitura','vigilancia sanitaria','alvara'],
+  marketing: ['marketing'],
+  googleAds: ['google ads','google adwords'],
+  meta: ['meta ads','facebook ads','instagram ads'],
+  designer: ['designer','design','jonathan'],
+  adsMarketplaces: ['ads shopee','ads mercado livre','ads tiktok','impulsiona'],
+  maquinas: ['maquina industrial','equipamento'],
+  assinaturas: ['assinatura','netflix','spotify','google drive'],
+  lanche: ['lanche'],
+  almoco: ['almoco','marmita'],
+  valeTransporte: ['vale transporte'],
+  cartorio: ['cartorio'],
+  tarifasBancarias: ['tarifa bancaria','anuidade','anuidade cartao','manutencao de conta','cartao sicredi','cartao bradesco','compra internacional','tarifa'],
+  jurosCartao: ['juros cartao','juros de cartao','juros'],
+  aluguel: ['aluguel','tania cristina'],
+  seguroPredial: ['seguro predial','seguro barracao'],
+  retiradaLucros: ['retirada de lucro'],
+  receitasNaoOp: ['receita nao operacional','venda de ativo'],
+  despesasNaoOp: ['despesa nao operacional'],
+  invMaquinas: ['compra de maquina','compra de equipamento'],
+  invMoveis: ['moveis','utensilios'],
+  invVeiculos: ['compra de veiculo','financiamento veiculo'],
+  invReformas: ['reforma','obra','obras'],
+  invFinancLongo: ['financiamento longo prazo'],
+  invFinancCurto: ['financiamento curto prazo'],
+};
+function suggestCategoria(fornecedor, descricao){
+  const txt = normalizeTxt((fornecedor||'')+' '+(descricao||''));
+  if(!txt.trim()) return null;
+  // 1) aprendizado: já usei esse fornecedor antes?
+  const fornecedorNorm = normalizeTxt(fornecedor);
+  if(fornecedorNorm && contasAprendizado[fornecedorNorm]) return contasAprendizado[fornecedorNorm];
+  // 2) dicionário de palavras-chave: pega o match mais específico (palavra mais longa)
+  let melhor = null, melhorLen = 0;
+  for(const [categoria, palavras] of Object.entries(CONTAS_KEYWORD_MAP)){
+    palavras.forEach(p=>{
+      if(p && txt.includes(p) && p.length>melhorLen){ melhor = categoria; melhorLen = p.length; }
+    });
+  }
+  return melhor;
+}
+async function loadContasAprendizado(){
+  try{
+    const raw = await window.storage.get('contasAprendizado');
+    if(!raw) return {};
+    const obj = JSON.parse(raw.value);
+    return (obj && typeof obj==='object') ? obj : {};
+  }catch(e){ return {}; }
+}
+async function saveContasAprendizado(){
+  try{ await window.storage.set('contasAprendizado', JSON.stringify(contasAprendizado)); }catch(e){}
+}
+function migrateContaPagar(c){
+  if(c.categoriaFinanceira===undefined) c.categoriaFinanceira = null;
+  if(c.historico===undefined) c.historico = false;
+  if(c._finAplicado===undefined) c._finAplicado = false;
+  return c;
+}
+async function saveContasPagar(){
+  try{ await window.storage.set('contasPagar', JSON.stringify(contasPagar)); }
+  catch(e){ showToast('Erro ao salvar contas a pagar'); }
+}
+function contaEstaVencida(c){
+  if(c.status==='pago') return false;
+  if(!c.dataVencimento) return false;
+  return c.dataVencimento < todayStr();
+}
+// Aplica (soma) ou reverte o valor de uma conta paga no Acontecido do Financeiro.
+// Sempre reverte primeiro, depois reaplica com os dados atuais — evita contar em dobro
+// ou deixar valor "esquecido" no Financeiro quando a conta é editada, excluída ou reaberta.
+function reverterContaDoFinanceiro(c){
+  if(!c._finAplicado) return;
+  const {_finAno:ano, _finMes:mes, _finCategoria:cat, _finValorAplicado:val} = c;
+  if(financeiro[ano] && financeiro[ano][mes] && financeiro[ano][mes][cat]){
+    financeiro[ano][mes][cat].a = (Number(financeiro[ano][mes][cat].a)||0) - Number(val||0);
+  }
+  c._finAplicado = false;
+  c._finAno = null; c._finMes = null; c._finCategoria = null; c._finValorAplicado = null;
+}
+function reaplicarContaNoFinanceiro(c){
+  reverterContaDoFinanceiro(c);
+  if(c.historico) return; // histórico importado nunca mexe no Financeiro (já está contabilizado na planilha original)
+  if(c.status!=='pago') return;
+  if(!c.categoriaFinanceira) return;
+  if(!c.dataPagamento) return;
+  const d = new Date(c.dataPagamento+'T00:00:00');
+  const ano = String(d.getFullYear());
+  const mes = FIN_MESES[d.getMonth()];
+  const cat = c.categoriaFinanceira;
+  const valor = Number(c.valor)||0;
+  if(!financeiro[ano]) financeiro[ano] = {};
+  if(!financeiro[ano][mes]) financeiro[ano][mes] = {};
+  if(!financeiro[ano][mes][cat]) financeiro[ano][mes][cat] = {p:0,a:0};
+  financeiro[ano][mes][cat].a = (Number(financeiro[ano][mes][cat].a)||0) + valor;
+  c._finAplicado = true;
+  c._finAno = ano; c._finMes = mes; c._finCategoria = cat; c._finValorAplicado = valor;
+}
 function fmtDateBR(iso){ if(!iso) return '-'; const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; }
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -572,6 +732,8 @@ async function loadAll(){
   insumosExtras = await loadCollection('insumosExtras', migrateInsumoExtra);
   usuarios = await loadCollection('usuarios', null);
   financeiro = await loadFinanceiro();
+  contasPagar = await loadCollection('contasPagar', migrateContaPagar);
+  contasAprendizado = await loadContasAprendizado();
   dataReady = true;
 }
 async function saveProducao(){ try{ await window.storage.set('producao', JSON.stringify(producao)); }catch(e){ showToast('Erro ao salvar'); } }
@@ -647,7 +809,7 @@ function applyAuthState(){
   document.body.classList.remove('role-admin','role-colaborador');
   if(currentUser) document.body.classList.add('role-'+currentUser.papel);
   if(!currentUser){ renderAuthScreen(); return; }
-  if(currentUser.papel!=='admin' && ['pagamentos','perdas','materiaprima','financeiro','config'].includes(activeTab)){
+  if(currentUser.papel!=='admin' && ['pagamentos','perdas','materiaprima','contaspagar','financeiro','config'].includes(activeTab)){
     activeTab = 'dashboard';
     document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab==='dashboard'));
   }
@@ -711,6 +873,7 @@ function render(){
   else if(activeTab==='pagamentos') main.innerHTML = renderPagamentos();
   else if(activeTab==='perdas') main.innerHTML = renderPerdas();
   else if(activeTab==='materiaprima') main.innerHTML = renderMateriaPrima();
+  else if(activeTab==='contaspagar') main.innerHTML = renderContasPagar();
   else if(activeTab==='financeiro'){ main.innerHTML = renderFinanceiro(); attachFinanceiroHandlers(); }
   else if(activeTab==='config') main.innerHTML = renderConfig();
   attachDynamicHandlers();
@@ -1676,6 +1839,188 @@ function attachFinanceiroHandlers(){
   });
 }
 
+let contasFiltro = 'abertas';
+function renderContasPagar(){
+  const hoje = todayStr();
+  const naoHistorico = contasPagar.filter(c=>!c.historico);
+  const abertas = naoHistorico.filter(c=>c.status!=='pago');
+  const totalAberto = abertas.reduce((s,c)=>s+Number(c.valor||0),0);
+  const totalVencido = abertas.filter(contaEstaVencida).reduce((s,c)=>s+Number(c.valor||0),0);
+  const pagoMes = naoHistorico.filter(c=>c.status==='pago' && c.dataPagamento && c.dataPagamento.slice(0,7)===hoje.slice(0,7)).reduce((s,c)=>s+Number(c.valor||0),0);
+
+  let html = `<div class="metric-grid">
+    <div class="metric"><div class="label">Em aberto</div><div class="value" style="color:var(--money)">${fmtMoney(totalAberto)}</div></div>
+    <div class="metric"><div class="label">Vencido</div><div class="value" style="color:var(--perda)">${fmtMoney(totalVencido)}</div></div>
+    <div class="metric"><div class="label">Pago este mês</div><div class="value">${fmtMoney(pagoMes)}</div></div>
+    <div class="metric"><div class="label">Contas em aberto</div><div class="value">${abertas.length}</div></div>
+  </div>`;
+
+  html += `<div class="filter-row">
+    <button class="btn-toggle ${contasFiltro==='abertas'?'active':''}" id="btnContasAbertas">Em aberto</button>
+    <button class="btn-toggle ${contasFiltro==='pagas'?'active':''}" id="btnContasPagas">Pagas</button>
+    <button class="btn-toggle ${contasFiltro==='historico'?'active':''}" id="btnContasHistorico">Histórico</button>
+  </div>`;
+
+  let lista;
+  if(contasFiltro==='abertas') lista = naoHistorico.filter(c=>c.status!=='pago').sort((a,b)=>(a.dataVencimento||'').localeCompare(b.dataVencimento||''));
+  else if(contasFiltro==='pagas') lista = naoHistorico.filter(c=>c.status==='pago').sort((a,b)=>(b.dataPagamento||'').localeCompare(a.dataPagamento||''));
+  else lista = contasPagar.filter(c=>c.historico).sort((a,b)=>(b.dataVencimento||'').localeCompare(a.dataVencimento||''));
+
+  if(lista.length===0){
+    html += `<div class="empty">Nenhuma conta nesta lista.</div>`;
+    return html;
+  }
+  const leaves = finAllLeaves();
+  const leafLabel = key => { const l = leaves.find(x=>x.key===key); return l ? l.label : '—'; };
+
+  html += `<div class="card">`;
+  lista.forEach(c=>{
+    const vencida = contaEstaVencida(c);
+    const statusTag = c.status==='pago' ? `<span class="tag tag-revisado">Pago</span>` : (vencida ? `<span class="tag" style="background:rgba(248,113,113,.15); color:var(--perda);">Vencido</span>` : `<span class="tag tag-enviado">Em aberto</span>`);
+    html += `<div class="item">
+      <div class="item-top">
+        <div><div class="item-title">${escapeHtml(c.fornecedor)}</div><div class="item-sub">${escapeHtml(c.descricao||'')}</div></div>
+        <div class="item-right">${statusTag}<br>${fmtMoney(c.valor)}</div>
+      </div>
+      <div class="item-note">Vencimento: ${fmtDateBR(c.dataVencimento)}${c.status==='pago'?(' · Pago em '+fmtDateBR(c.dataPagamento)):''}${c.categoriaFinanceira?(' · '+escapeHtml(leafLabel(c.categoriaFinanceira))):' · sem categoria'}${c.tipoPagamento?(' · '+escapeHtml(c.tipoPagamento)):''}</div>
+      ${c.historico ? `<div class="item-note">Importado do histórico — não afeta o Financeiro</div>` : ''}
+      <div class="item-actions">
+        ${c.status!=='pago' ? `<button class="btn btn-primary" data-action="marcarContaPaga" data-id="${c.id}">Marcar como pago</button>` : `<button class="btn" data-action="reabrirConta" data-id="${c.id}">Reabrir</button>`}
+        <button class="btn" data-action="editarConta" data-id="${c.id}">Editar</button>
+        <button class="btn btn-danger" data-action="delConta" data-id="${c.id}" style="margin-left:auto;">Excluir</button>
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+function openContaPagarForm(){
+  const leaves = finAllLeaves();
+  openModal(`
+    <h3>Nova conta a pagar</h3>
+    <div class="field"><label>Fornecedor</label><input id="cp_fornecedor" placeholder="Ex: Sabesp, Contador, Costureira..."></div>
+    <div class="field"><label>Descrição</label><input id="cp_descricao" placeholder="Ex: Água e esgoto, honorários..."></div>
+    <div class="row2">
+      <div class="field"><label>Valor (R$)</label><input id="cp_valor" type="text" inputmode="decimal" placeholder="0,00"></div>
+      <div class="field"><label>Vencimento</label><input id="cp_venc" type="date" value="${todayStr()}"></div>
+    </div>
+    <div class="field"><label>Categoria financeira</label>
+      <select id="cp_categoria">
+        <option value="">Selecione...</option>
+        ${leaves.map(l=>`<option value="${l.key}">${escapeHtml(l.path)}</option>`).join('')}
+      </select>
+      <div class="hint" id="cp_sugestaoHint" style="display:none;">Sugestão automática — confira antes de salvar.</div>
+    </div>
+    <div class="field"><label>Tipo de pagamento</label>
+      <select id="cp_tipo"><option value="">Selecione...</option><option value="PIX">PIX</option><option value="Boleto">Boleto</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Outro">Outro</option></select>
+    </div>
+    <div class="checkfield"><input type="checkbox" id="cp_jaPago"><label for="cp_jaPago">Já paguei essa conta</label></div>
+    <div class="field" id="cp_wrapDataPag" style="display:none;"><label>Data do pagamento</label><input id="cp_dataPag" type="date" value="${todayStr()}"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="saveConta">Salvar</button>
+    </div>
+  `);
+  wireContaPagarSuggestion();
+  const chk = document.getElementById('cp_jaPago');
+  const wrap = document.getElementById('cp_wrapDataPag');
+  chk.onchange = ()=>{ wrap.style.display = chk.checked ? 'block' : 'none'; };
+  document.getElementById('saveConta').onclick = async ()=>{
+    const fornecedor = document.getElementById('cp_fornecedor').value.trim();
+    const descricao = document.getElementById('cp_descricao').value.trim();
+    const valor = finParseInput(document.getElementById('cp_valor').value);
+    const dataVencimento = document.getElementById('cp_venc').value;
+    const categoriaFinanceira = document.getElementById('cp_categoria').value || null;
+    const tipoPagamento = document.getElementById('cp_tipo').value;
+    const jaPago = chk.checked;
+    const dataPagamento = jaPago ? document.getElementById('cp_dataPag').value : null;
+    if(!fornecedor){ showToast('Informe o fornecedor'); return; }
+    if(valor<=0){ showToast('Informe o valor'); return; }
+    if(!dataVencimento){ showToast('Informe o vencimento'); return; }
+    if(jaPago && !categoriaFinanceira){ showToast('Escolha a categoria financeira pra poder marcar como pago'); return; }
+    const c = {id:uid(), fornecedor, descricao, valor, dataVencimento, dataCompra:null,
+      categoriaFinanceira, tipoPagamento, status: jaPago?'pago':'aberto', dataPagamento,
+      historico:false, _finAplicado:false, _finAno:null, _finMes:null, _finCategoria:null, _finValorAplicado:null};
+    reaplicarContaNoFinanceiro(c);
+    contasPagar.push(c);
+    if(categoriaFinanceira && fornecedor){ contasAprendizado[normalizeTxt(fornecedor)] = categoriaFinanceira; await saveContasAprendizado(); }
+    await saveContasPagar(); await saveFinanceiro();
+    closeModal(); render(); showToast('Conta cadastrada');
+  };
+}
+function wireContaPagarSuggestion(){
+  let categoriaManual = false;
+  const selCat = document.getElementById('cp_categoria');
+  const hint = document.getElementById('cp_sugestaoHint');
+  selCat.addEventListener('change', ()=>{ categoriaManual = true; hint.style.display='none'; });
+  const runSuggestion = ()=>{
+    if(categoriaManual) return;
+    const forn = document.getElementById('cp_fornecedor').value;
+    const desc = document.getElementById('cp_descricao').value;
+    const sug = suggestCategoria(forn, desc);
+    if(sug){ selCat.value = sug; hint.style.display='block'; }
+  };
+  document.getElementById('cp_fornecedor').addEventListener('blur', runSuggestion);
+  document.getElementById('cp_descricao').addEventListener('blur', runSuggestion);
+}
+function openEditarContaPagarForm(contaId){
+  const c = contasPagar.find(x=>x.id===contaId);
+  const leaves = finAllLeaves();
+  openModal(`
+    <h3>Editar conta a pagar</h3>
+    <div class="field"><label>Fornecedor</label><input id="cp_fornecedor" value="${escapeHtml(c.fornecedor)}"></div>
+    <div class="field"><label>Descrição</label><input id="cp_descricao" value="${escapeHtml(c.descricao||'')}"></div>
+    <div class="row2">
+      <div class="field"><label>Valor (R$)</label><input id="cp_valor" type="text" inputmode="decimal" value="${finFmtInput(c.valor)}"></div>
+      <div class="field"><label>Vencimento</label><input id="cp_venc" type="date" value="${c.dataVencimento||''}"></div>
+    </div>
+    <div class="field"><label>Categoria financeira</label>
+      <select id="cp_categoria">
+        <option value="">Selecione...</option>
+        ${leaves.map(l=>`<option value="${l.key}" ${c.categoriaFinanceira===l.key?'selected':''}>${escapeHtml(l.path)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Tipo de pagamento</label>
+      <select id="cp_tipo">
+        <option value="">Selecione...</option>
+        ${['PIX','Boleto','Cartão de Crédito','Outro'].map(t=>`<option value="${t}" ${c.tipoPagamento===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="checkfield"><input type="checkbox" id="cp_jaPago" ${c.status==='pago'?'checked':''}><label for="cp_jaPago">Já paguei essa conta</label></div>
+    <div class="field" id="cp_wrapDataPag" style="display:${c.status==='pago'?'block':'none'};"><label>Data do pagamento</label><input id="cp_dataPag" type="date" value="${c.dataPagamento||todayStr()}"></div>
+    ${c.historico ? `<div class="field hint">Essa conta é histórico importado — não afeta o Financeiro mesmo que marcada como paga.</div>` : ''}
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="saveContaEdit">Salvar</button>
+    </div>
+  `);
+  const chk = document.getElementById('cp_jaPago');
+  const wrap = document.getElementById('cp_wrapDataPag');
+  chk.onchange = ()=>{ wrap.style.display = chk.checked ? 'block' : 'none'; };
+  document.getElementById('saveContaEdit').onclick = async ()=>{
+    const fornecedor = document.getElementById('cp_fornecedor').value.trim();
+    const descricao = document.getElementById('cp_descricao').value.trim();
+    const valor = finParseInput(document.getElementById('cp_valor').value);
+    const dataVencimento = document.getElementById('cp_venc').value;
+    const categoriaFinanceira = document.getElementById('cp_categoria').value || null;
+    const tipoPagamento = document.getElementById('cp_tipo').value;
+    const jaPago = chk.checked;
+    const dataPagamento = jaPago ? document.getElementById('cp_dataPag').value : null;
+    if(!fornecedor){ showToast('Informe o fornecedor'); return; }
+    if(valor<=0){ showToast('Informe o valor'); return; }
+    if(!dataVencimento){ showToast('Informe o vencimento'); return; }
+    if(jaPago && !categoriaFinanceira){ showToast('Escolha a categoria financeira pra poder marcar como pago'); return; }
+    c.fornecedor=fornecedor; c.descricao=descricao; c.valor=valor; c.dataVencimento=dataVencimento;
+    c.categoriaFinanceira=categoriaFinanceira; c.tipoPagamento=tipoPagamento;
+    c.status = jaPago?'pago':'aberto'; c.dataPagamento=dataPagamento;
+    reaplicarContaNoFinanceiro(c);
+    if(categoriaFinanceira && fornecedor){ contasAprendizado[normalizeTxt(fornecedor)] = categoriaFinanceira; await saveContasAprendizado(); }
+    await saveContasPagar(); await saveFinanceiro();
+    closeModal(); render(); showToast('Conta atualizada');
+  };
+}
+
 function renderConfig(){
   let html = `<div class="card">
     <div class="item-top">
@@ -1743,6 +2088,24 @@ function attachDynamicHandlers(){
       if(action==='delProducao'){
         producao = producao.filter(p=>p.id!==id);
         await saveProducao(); render(); showToast('Registro excluído');
+      }else if(action==='marcarContaPaga'){
+        const c = contasPagar.find(x=>x.id===id);
+        if(!c.categoriaFinanceira){ openEditarContaPagarForm(id); showToast('Escolha a categoria financeira pra marcar como pago'); return; }
+        c.status='pago'; c.dataPagamento=todayStr();
+        reaplicarContaNoFinanceiro(c);
+        await saveContasPagar(); await saveFinanceiro(); render(); showToast('Conta marcada como paga');
+      }else if(action==='reabrirConta'){
+        const c = contasPagar.find(x=>x.id===id);
+        c.status='aberto'; c.dataPagamento=null;
+        reaplicarContaNoFinanceiro(c);
+        await saveContasPagar(); await saveFinanceiro(); render(); showToast('Conta reaberta');
+      }else if(action==='editarConta'){
+        openEditarContaPagarForm(id);
+      }else if(action==='delConta'){
+        const c = contasPagar.find(x=>x.id===id);
+        reverterContaDoFinanceiro(c);
+        contasPagar = contasPagar.filter(x=>x.id!==id);
+        await saveContasPagar(); await saveFinanceiro(); render(); showToast('Conta excluída');
       }else if(action==='delPerda'){
         perdas = perdas.filter(p=>p.id!==id);
         await savePerdas(); render(); showToast('Perda excluída');
@@ -1822,6 +2185,12 @@ function attachDynamicHandlers(){
   const btnConcluidos = document.getElementById('btnFiltroConcluidos');
   if(btnAtivos) btnAtivos.onclick = ()=>{ producaoFiltro='ativos'; render(); };
   if(btnConcluidos) btnConcluidos.onclick = ()=>{ producaoFiltro='concluidos'; render(); };
+  const btnCA = document.getElementById('btnContasAbertas');
+  const btnCP = document.getElementById('btnContasPagas');
+  const btnCH = document.getElementById('btnContasHistorico');
+  if(btnCA) btnCA.onclick = ()=>{ contasFiltro='abertas'; render(); };
+  if(btnCP) btnCP.onclick = ()=>{ contasFiltro='pagas'; render(); };
+  if(btnCH) btnCH.onclick = ()=>{ contasFiltro='historico'; render(); };
 }
 
 function buildResumoMensal(){
@@ -1933,6 +2302,7 @@ function openFormForTab(){
   else if(activeTab==='pagamentos') showToast('Registre o retorno de um lote para gerar pagamentos');
   else if(activeTab==='perdas') openPerdaForm();
   else if(activeTab==='materiaprima') openFornecedorForm();
+  else if(activeTab==='contaspagar') openContaPagarForm();
   else if(activeTab==='financeiro') showToast('Edite os valores direto nos campos da tabela');
   else if(activeTab==='config') openFuncionarioForm();
 }
