@@ -1497,6 +1497,37 @@ function openEditarInsumoExtraForm(iid){
   };
 }
 
+function finFmtInput(v){
+  v = Number(v)||0;
+  if(v===0) return '';
+  return v.toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function finParseInput(str){
+  if(str==null) return 0;
+  str = String(str).trim();
+  if(!str) return 0;
+  str = str.replace(/[^\d,.\-]/g,'');
+  const neg = str.startsWith('-');
+  if(neg) str = str.slice(1);
+  const lastComma = str.lastIndexOf(',');
+  const lastDot = str.lastIndexOf('.');
+  const lastSep = Math.max(lastComma, lastDot);
+  let intPart, decPart;
+  if(lastSep === -1){
+    intPart = str; decPart = '0';
+  }else{
+    const after = str.slice(lastSep+1);
+    if(after.length>0 && after.length<=2 && /^\d+$/.test(after)){
+      intPart = str.slice(0,lastSep).replace(/[,.]/g,'');
+      decPart = after;
+    }else{
+      intPart = str.replace(/[,.]/g,'');
+      decPart = '0';
+    }
+  }
+  const n = parseFloat((intPart||'0') + '.' + decPart);
+  return isNaN(n) ? 0 : (neg ? -n : n);
+}
 function finRenderTree(nodes, vals, editable, level){
   let html = '';
   nodes.forEach(node=>{
@@ -1513,8 +1544,8 @@ function finRenderTree(nodes, vals, editable, level){
       html += `<div class="fin-row" style="padding-left:${pad}px;">
         <div class="fin-label">${escapeHtml(node.label)}</div>
         <div class="fin-vals">
-          ${editable ? `<input class="fin-input" type="number" step="0.01" inputmode="decimal" data-finkey="${node.key}" data-finfield="p" value="${val.p||''}" placeholder="0">` : `<span class="fin-val">${fmtMoney(val.p)}</span>`}
-          ${editable ? `<input class="fin-input" type="number" step="0.01" inputmode="decimal" data-finkey="${node.key}" data-finfield="a" value="${val.a||''}" placeholder="0">` : `<span class="fin-val">${fmtMoney(val.a)}</span>`}
+          ${editable ? `<input class="fin-input" type="text" inputmode="decimal" data-finkey="${node.key}" data-finfield="p" value="${finFmtInput(val.p)}" placeholder="0,00">` : `<span class="fin-val">${fmtMoney(val.p)}</span>`}
+          ${editable ? `<input class="fin-input" type="text" inputmode="decimal" data-finkey="${node.key}" data-finfield="a" value="${finFmtInput(val.a)}" placeholder="0,00">` : `<span class="fin-val">${fmtMoney(val.a)}</span>`}
         </div>
       </div>`;
     }
@@ -1527,8 +1558,8 @@ function finRenderLeafRow(key, label, dados, editable){
   return `<div class="fin-row" style="padding-left:10px;">
     <div class="fin-label">${escapeHtml(label)}</div>
     <div class="fin-vals">
-      ${editable ? `<input class="fin-input" type="number" step="0.01" inputmode="decimal" data-finkey="${key}" data-finfield="p" value="${val.p||''}" placeholder="0">` : `<span class="fin-val">${fmtMoney(val.p)}</span>`}
-      ${editable ? `<input class="fin-input" type="number" step="0.01" inputmode="decimal" data-finkey="${key}" data-finfield="a" value="${val.a||''}" placeholder="0">` : `<span class="fin-val">${fmtMoney(val.a)}</span>`}
+      ${editable ? `<input class="fin-input" type="text" inputmode="decimal" data-finkey="${key}" data-finfield="p" value="${finFmtInput(val.p)}" placeholder="0,00">` : `<span class="fin-val">${fmtMoney(val.p)}</span>`}
+      ${editable ? `<input class="fin-input" type="text" inputmode="decimal" data-finkey="${key}" data-finfield="a" value="${finFmtInput(val.a)}" placeholder="0,00">` : `<span class="fin-val">${fmtMoney(val.a)}</span>`}
     </div>
   </div>`;
 }
@@ -1633,7 +1664,7 @@ function attachFinanceiroHandlers(){
     inp.onchange = async ()=>{
       const key = inp.dataset.finkey;
       const field = inp.dataset.finfield;
-      const val = Number(inp.value)||0;
+      const val = finParseInput(inp.value);
       const ano = finAno, mes = FIN_MESES[finMesIdx];
       if(!financeiro[ano]) financeiro[ano] = {};
       if(!financeiro[ano][mes]) financeiro[ano][mes] = {};
