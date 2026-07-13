@@ -1840,6 +1840,9 @@ function attachFinanceiroHandlers(){
 }
 
 let contasFiltro = 'abertas';
+let contasBusca = '';
+let contasFiltroCategoria = '';
+let contasFiltroMes = '';
 function renderContasPagar(){
   const hoje = todayStr();
   const naoHistorico = contasPagar.filter(c=>!c.historico);
@@ -1861,18 +1864,52 @@ function renderContasPagar(){
     <button class="btn-toggle ${contasFiltro==='historico'?'active':''}" id="btnContasHistorico">Histórico</button>
   </div>`;
 
+  const leaves = finAllLeaves();
+  const leafLabel = key => { const l = leaves.find(x=>x.key===key); return l ? l.label : '—'; };
+
+  // opções de mês/ano com base no que existe nos dados (vencimento ou pagamento)
+  const mesesSet = new Set();
+  contasPagar.forEach(c=>{
+    if(c.dataVencimento) mesesSet.add(c.dataVencimento.slice(0,7));
+    if(c.dataPagamento) mesesSet.add(c.dataPagamento.slice(0,7));
+  });
+  const mesesOptions = Array.from(mesesSet).sort();
+  const fmtMesOpt = ym => { const [y,m]=ym.split('-'); return FIN_MESES[Number(m)-1]+'/'+y; };
+
+  html += `<div class="field"><input id="cp_busca" placeholder="Buscar por fornecedor ou descrição..." value="${escapeHtml(contasBusca)}"></div>
+  <div class="row2">
+    <div class="field"><select id="cp_filtroCategoria">
+      <option value="">Todas as categorias</option>
+      ${leaves.map(l=>`<option value="${l.key}" ${contasFiltroCategoria===l.key?'selected':''}>${escapeHtml(l.path)}</option>`).join('')}
+    </select></div>
+    <div class="field"><select id="cp_filtroMes">
+      <option value="">Todos os meses</option>
+      ${mesesOptions.map(m=>`<option value="${m}" ${contasFiltroMes===m?'selected':''}>${fmtMesOpt(m)}</option>`).join('')}
+    </select></div>
+  </div>`;
+
   let lista;
   if(contasFiltro==='abertas') lista = naoHistorico.filter(c=>c.status!=='pago').sort((a,b)=>(a.dataVencimento||'').localeCompare(b.dataVencimento||''));
   else if(contasFiltro==='pagas') lista = naoHistorico.filter(c=>c.status==='pago').sort((a,b)=>(b.dataPagamento||'').localeCompare(a.dataPagamento||''));
   else lista = contasPagar.filter(c=>c.historico).sort((a,b)=>(b.dataVencimento||'').localeCompare(a.dataVencimento||''));
 
+  if(contasBusca.trim()){
+    const q = normalizeTxt(contasBusca);
+    lista = lista.filter(c=> normalizeTxt(c.fornecedor).includes(q) || normalizeTxt(c.descricao).includes(q));
+  }
+  if(contasFiltroCategoria){
+    lista = lista.filter(c=>c.categoriaFinanceira===contasFiltroCategoria);
+  }
+  if(contasFiltroMes){
+    lista = lista.filter(c=> (c.dataVencimento&&c.dataVencimento.slice(0,7)===contasFiltroMes) || (c.dataPagamento&&c.dataPagamento.slice(0,7)===contasFiltroMes) );
+  }
+
   if(lista.length===0){
-    html += `<div class="empty">Nenhuma conta nesta lista.</div>`;
+    html += `<div class="empty">Nenhuma conta encontrada.</div>`;
     return html;
   }
-  const leaves = finAllLeaves();
-  const leafLabel = key => { const l = leaves.find(x=>x.key===key); return l ? l.label : '—'; };
 
+  html += `<div class="section-title">${lista.length} conta(s)</div>`;
   html += `<div class="card">`;
   lista.forEach(c=>{
     const vencida = contaEstaVencida(c);
@@ -2191,6 +2228,15 @@ function attachDynamicHandlers(){
   if(btnCA) btnCA.onclick = ()=>{ contasFiltro='abertas'; render(); };
   if(btnCP) btnCP.onclick = ()=>{ contasFiltro='pagas'; render(); };
   if(btnCH) btnCH.onclick = ()=>{ contasFiltro='historico'; render(); };
+  const cpBusca = document.getElementById('cp_busca');
+  const cpFiltroCategoria = document.getElementById('cp_filtroCategoria');
+  const cpFiltroMes = document.getElementById('cp_filtroMes');
+  if(cpBusca){
+    cpBusca.onchange = ()=>{ contasBusca = cpBusca.value; render(); };
+    cpBusca.onkeydown = (e)=>{ if(e.key==='Enter') cpBusca.blur(); };
+  }
+  if(cpFiltroCategoria) cpFiltroCategoria.onchange = ()=>{ contasFiltroCategoria = cpFiltroCategoria.value; render(); };
+  if(cpFiltroMes) cpFiltroMes.onchange = ()=>{ contasFiltroMes = cpFiltroMes.value; render(); };
 }
 
 function buildResumoMensal(){
