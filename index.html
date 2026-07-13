@@ -130,6 +130,24 @@
   .rate-row{display:flex; justify-content:space-between; align-items:center; padding:7px 0; font-size:12.5px; border-bottom:1px solid var(--border);}
   .rate-row:last-child{border-bottom:none;}
   .filter-row{display:flex; gap:8px; margin-bottom:14px;}
+  .fin-toolbar{display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap;}
+  .fin-toolbar select{background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;}
+  .fin-meses{display:flex; gap:6px; overflow-x:auto; margin-bottom:14px; padding-bottom:4px;}
+  .fin-mes-btn{flex:0 0 auto; background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); font-size:11.5px; font-weight:600; padding:7px 12px; border-radius:7px; cursor:pointer; white-space:nowrap;}
+  .fin-mes-btn.active{background:var(--accent-soft); color:var(--accent); border-color:var(--accent);}
+  .fin-row{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 0; border-bottom:1px solid var(--border);}
+  .fin-row:last-child{border-bottom:none;}
+  .fin-label{font-size:12px; flex:1; min-width:0;}
+  .fin-vals{display:flex; gap:6px; flex-shrink:0;}
+  .fin-val{width:70px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:11.5px; display:inline-block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .fin-input{width:70px; text-align:right; background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:6px 6px; border-radius:6px; font-size:11.5px; font-family:'IBM Plex Mono',monospace;}
+  .fin-input:focus{outline:none; border-color:var(--accent);}
+  .fin-sum{font-weight:700; background:var(--surface-2); border-radius:6px; padding:8px 10px;}
+  .fin-sum .fin-label{font-weight:700;}
+  .fin-header{font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-dim); font-weight:700; border-bottom:2px solid var(--border);}
+  @media (min-width:900px){
+    .fin-val, .fin-input{width:100px; font-size:12.5px;}
+  }
   #authScreen{display:none; min-height:100vh; align-items:center; justify-content:center; padding:20px;}
   #authScreen .auth-logo{display:block; height:64px; width:auto; margin:0 auto 18px;}
   body.locked #app{display:none;}
@@ -167,6 +185,7 @@
         <button class="tabbtn" data-restrict="admin" data-tab="pagamentos">Pagamentos</button>
         <button class="tabbtn" data-restrict="admin" data-tab="perdas">Perdas</button>
         <button class="tabbtn" data-restrict="admin" data-tab="materiaprima">Insumos / Fornecedores</button>
+        <button class="tabbtn" data-restrict="admin" data-tab="financeiro">Financeiro</button>
         <button class="tabbtn" data-restrict="admin" data-tab="config">Cadastro</button>
       </nav>
     </div>
@@ -234,16 +253,210 @@ let config = [];
 let fornecedores = [];
 let insumosExtras = [];
 let usuarios = [];
+let financeiro = {};
 let currentUser = null;
 let activeTab = 'dashboard';
 let dashFiltroEtapa = 'todas';
 let dashFiltroFunc = 'todos';
 let producaoFiltro = 'ativos';
+let finAno = new Date().getFullYear().toString();
+let finMesIdx = new Date().getMonth();
+let finModo = 'mes';
 let dataReady = false;
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function fmtMoney(v){ return (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+
+// ===================== FINANCEIRO (Planejado x Acontecido) =====================
+const FIN_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+const FIN_TREE = [
+  {key:'vendas', label:'1. Vendas Totais', children:[
+    {key:'shopee', label:'Vendas Shopee'},
+    {key:'tiktok', label:'Vendas TikTok'},
+    {key:'ml', label:'Vendas Mercado Livre'},
+    {key:'shein', label:'Vendas Shein'},
+    {key:'drop', label:'Vendas Drop'},
+  ]},
+  {key:'custosVar', label:'2. Custos Variáveis', children:[
+    {key:'cmv', label:'Custo da Mercadoria Vendida'},
+    {key:'frete', label:'Frete'},
+    {key:'impostos', label:'Impostos', children:[
+      {key:'pis', label:'PIS (Federal)'},
+      {key:'cofins', label:'Cofins (Federal)'},
+      {key:'contSocial', label:'Cont. Social (Federal)'},
+      {key:'irpj', label:'IRPJ (Federal)'},
+      {key:'simples', label:'Simples (Federal)'},
+      {key:'icms', label:'ICMS (Estadual)'},
+      {key:'impostosParc', label:'Impostos Parcelados'},
+    ]},
+    {key:'comissoes', label:'Comissões/Taxas/Fretes MarketPlaces'},
+    {key:'taxaCartao', label:'Taxa Cobrança Cartão de Crédito'},
+    {key:'embalagens', label:'Embalagens'},
+    {key:'maoObraTerc', label:'Mão de Obra Terceirizada'},
+    {key:'perdasCV', label:'Perdas'},
+    {key:'outrosCV', label:'Outros'},
+  ]},
+  {key:'custosFixos', label:'4. Custos Fixos', children:[
+    {key:'prolabore', label:'Pró-labore (Retirada Sócios)'},
+    {key:'encProlabore', label:'Encargos do Pró-labore'},
+    {key:'salarios', label:'Salários'},
+    {key:'encSalarios', label:'Encargos dos Salários', children:[
+      {key:'gps', label:'GPS'},
+      {key:'fgts', label:'FGTS'},
+      {key:'rescisao', label:'Rescisão'},
+      {key:'ferias', label:'Férias'},
+      {key:'decimoTerceiro', label:'13º Salário'},
+      {key:'premiacoes', label:'Premiações'},
+      {key:'horasExtras', label:'Horas Extras'},
+    ]},
+    {key:'energia', label:'Energia Elétrica'},
+    {key:'agua', label:'Água'},
+    {key:'telefone', label:'Telefone/Internet'},
+    {key:'veiculos', label:'Despesas com Veículos', children:[
+      {key:'combustivel', label:'Combustível'},
+      {key:'seguroVeic', label:'Seguros/IPVA/Multas'},
+      {key:'manutVeic', label:'Manutenção Veículos'},
+    ]},
+    {key:'matEscritorio', label:'Materiais de Escritório'},
+    {key:'matLimpeza', label:'Materiais de Limpeza'},
+    {key:'depreciacao', label:'Depreciação'},
+    {key:'servTerceiros', label:'Serviços de Terceiros', children:[
+      {key:'grupoDesafio', label:'Produtos do Grupo Desafio'},
+      {key:'cursos', label:'Cursos/Treinamentos'},
+      {key:'advogado', label:'Advogado'},
+      {key:'contador', label:'Contador'},
+      {key:'seguranca', label:'Segurança'},
+      {key:'programador', label:'Programador (software)'},
+      {key:'faxineira', label:'Faxineira'},
+      {key:'outrosServ', label:'Outros'},
+    ]},
+    {key:'sindicatos', label:'Sindicatos'},
+    {key:'associacoes', label:'Associações'},
+    {key:'viagens', label:'Despesas com Viagens'},
+    {key:'iptu', label:'IPTU'},
+    {key:'taxasPref', label:'Taxas da Prefeitura/Vig. Sanitária'},
+    {key:'propaganda', label:'Propaganda/Publicidade', children:[
+      {key:'marketing', label:'Marketing'},
+      {key:'googleAds', label:'Google Adwords'},
+      {key:'meta', label:'Meta - Instagram/Facebook'},
+      {key:'faixas', label:'Faixas'},
+      {key:'doacoes', label:'Doações'},
+      {key:'patrocinio', label:'Patrocínio'},
+      {key:'designer', label:'Designer'},
+      {key:'adsMarketplaces', label:'ADS MarketPlaces'},
+    ]},
+    {key:'manutAtivo', label:'Manutenção do Ativo Fixo', children:[
+      {key:'maquinas', label:'Máquinas'},
+      {key:'equipamentos', label:'Equipamentos'},
+      {key:'predioReparo', label:'Prédio (Obras Civis) - Reparo'},
+    ]},
+    {key:'assinaturas', label:'Assinaturas (Jornal, TV, Spotify...)'},
+    {key:'alimentacao', label:'Alimentação', children:[
+      {key:'lanche', label:'Lanche'},
+      {key:'almoco', label:'Almoço'},
+    ]},
+    {key:'valeTransporte', label:'Vale Transporte'},
+    {key:'cartorio', label:'Cartório/Correios'},
+    {key:'tarifasBancarias', label:'Tarifas Bancárias'},
+    {key:'juros', label:'Despesas com Juros', children:[
+      {key:'jurosDesconto', label:'Juros c/ Descontos'},
+      {key:'jurosCartao', label:'Juros de Cartão'},
+      {key:'jurosAtraso', label:'Juros c/ Atraso de Duplicatas'},
+    ]},
+    {key:'aluguel', label:'Aluguel'},
+    {key:'seguroPredial', label:'Seguro Predial'},
+    {key:'outrosCF1', label:'Outros 1'},
+    {key:'outrosCF2', label:'Outros 2'},
+    {key:'outrosCF3', label:'Outros 3'},
+    {key:'outrosCF4', label:'Outros 4'},
+  ]},
+];
+const FIN_INVEST_TREE = {key:'investimentos', label:'8. Investimentos', children:[
+  {key:'invMaquinas', label:'Máquinas e Equipamentos'},
+  {key:'invMoveis', label:'Móveis e Utensílios'},
+  {key:'invVeiculos', label:'Veículos'},
+  {key:'invReformas', label:'Reformas Prediais'},
+  {key:'invFinancLongo', label:'Financiamentos Longo Prazo'},
+  {key:'invFinancCurto', label:'Financiamentos Curto Prazo'},
+  {key:'invOutros1', label:'Outros 1'},
+  {key:'invOutros2', label:'Outros 2'},
+]};
+
+function finLeafKeys(node, out){
+  out = out || [];
+  if(node.children) node.children.forEach(c=>finLeafKeys(c, out));
+  else out.push(node.key);
+  return out;
+}
+function finEmptyValues(dados){
+  // soma valores brutos (planejado/acontecido) de um objeto {key:{p,a}}, calculando os nós-soma da árvore
+  const vals = {};
+  function walk(node){
+    if(node.children){
+      let p=0, a=0;
+      node.children.forEach(c=>{ walk(c); p += vals[c.key].p; a += vals[c.key].a; });
+      vals[node.key] = {p, a};
+    }else{
+      const raw = (dados && dados[node.key]) || {};
+      vals[node.key] = {p:Number(raw.p)||0, a:Number(raw.a)||0};
+    }
+  }
+  FIN_TREE.forEach(walk);
+  walk(FIN_INVEST_TREE);
+  return vals;
+}
+function finGetLucroAcumulado(ano, mesIdx){
+  // soma recursiva: lucro líquido de todos os meses até mesIdx (inclusive) do ano
+  let acc = 0;
+  for(let i=0;i<=mesIdx;i++){
+    const dados = (financeiro[ano] && financeiro[ano][FIN_MESES[i]]) || {};
+    acc += finCalcResumo(dados).lucroLiquido.a;
+  }
+  return acc;
+}
+function finCalcResumo(dados){
+  const v = finEmptyValues(dados);
+  const receitasNaoOp = (dados && dados['receitasNaoOp']) || {p:0,a:0};
+  const despesasNaoOp = (dados && dados['despesasNaoOp']) || {p:0,a:0};
+  const retiradaLucros = (dados && dados['retiradaLucros']) || {p:0,a:0};
+  const valorPagoMerc = (dados && dados['valorPagoMerc']) || {p:0,a:0};
+  const rno = {p:Number(receitasNaoOp.p)||0, a:Number(receitasNaoOp.a)||0};
+  const dno = {p:Number(despesasNaoOp.p)||0, a:Number(despesasNaoOp.a)||0};
+  const ret = {p:Number(retiradaLucros.p)||0, a:Number(retiradaLucros.a)||0};
+  const vpm = {p:Number(valorPagoMerc.p)||0, a:Number(valorPagoMerc.a)||0};
+  const vendas = v.vendas, custosVar = v.custosVar, custosFixos = v.custosFixos, invest = v.investimentos;
+  const margem = {p:vendas.p-custosVar.p, a:vendas.a-custosVar.a};
+  const lucroOp = {p:margem.p-custosFixos.p, a:margem.a-custosFixos.a};
+  const lucroLiquido = {
+    p: lucroOp.p + rno.p - dno.p - invest.p - ret.p,
+    a: lucroOp.a + rno.a - dno.a - invest.a - ret.a
+  };
+  const pontoEqOperacional = {
+    p: margem.p ? (custosFixos.p/margem.p)*vendas.p : 0,
+    a: margem.a ? (custosFixos.a/margem.a)*vendas.a : 0
+  };
+  const pontoEqFinanceiro = {
+    p: margem.p ? ((custosFixos.p+invest.p+ret.p+dno.p)/margem.p)*vendas.p : 0,
+    a: margem.a ? ((custosFixos.a+invest.a+ret.a+dno.a)/margem.a)*vendas.a : 0
+  };
+  const avaliacaoEstoque = {p: vpm.p-v.cmv.p, a: vpm.a-v.cmv.a};
+  return {v, margem, lucroOp, receitasNaoOp:rno, despesasNaoOp:dno, investimentos:invest, retiradaLucros:ret,
+    lucroLiquido, pontoEqOperacional, pontoEqFinanceiro, valorPagoMerc:vpm, avaliacaoEstoque};
+}
+async function loadFinanceiro(){
+  try{
+    const raw = await window.storage.get('financeiroData');
+    if(!raw) return {};
+    const obj = JSON.parse(raw.value);
+    return (obj && typeof obj==='object') ? obj : {};
+  }catch(e){ return {}; }
+}
+async function saveFinanceiro(){
+  try{ await window.storage.set('financeiroData', JSON.stringify(financeiro)); }
+  catch(e){ showToast('Erro ao salvar dados financeiros'); }
+}
 function fmtDateBR(iso){ if(!iso) return '-'; const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; }
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -358,6 +571,7 @@ async function loadAll(){
   fornecedores = await loadCollection('fornecedores', migrateFornecedor);
   insumosExtras = await loadCollection('insumosExtras', migrateInsumoExtra);
   usuarios = await loadCollection('usuarios', null);
+  financeiro = await loadFinanceiro();
   dataReady = true;
 }
 async function saveProducao(){ try{ await window.storage.set('producao', JSON.stringify(producao)); }catch(e){ showToast('Erro ao salvar'); } }
@@ -433,7 +647,7 @@ function applyAuthState(){
   document.body.classList.remove('role-admin','role-colaborador');
   if(currentUser) document.body.classList.add('role-'+currentUser.papel);
   if(!currentUser){ renderAuthScreen(); return; }
-  if(currentUser.papel!=='admin' && ['pagamentos','perdas','materiaprima','config'].includes(activeTab)){
+  if(currentUser.papel!=='admin' && ['pagamentos','perdas','materiaprima','financeiro','config'].includes(activeTab)){
     activeTab = 'dashboard';
     document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab==='dashboard'));
   }
@@ -497,6 +711,7 @@ function render(){
   else if(activeTab==='pagamentos') main.innerHTML = renderPagamentos();
   else if(activeTab==='perdas') main.innerHTML = renderPerdas();
   else if(activeTab==='materiaprima') main.innerHTML = renderMateriaPrima();
+  else if(activeTab==='financeiro'){ main.innerHTML = renderFinanceiro(); attachFinanceiroHandlers(); }
   else if(activeTab==='config') main.innerHTML = renderConfig();
   attachDynamicHandlers();
 }
@@ -1282,6 +1497,154 @@ function openEditarInsumoExtraForm(iid){
   };
 }
 
+function finRenderTree(nodes, vals, editable, level){
+  let html = '';
+  nodes.forEach(node=>{
+    const val = vals[node.key] || {p:0,a:0};
+    const isSum = !!node.children;
+    const pad = 10 + level*14;
+    if(isSum){
+      html += `<div class="fin-row fin-sum" style="padding-left:${pad}px;">
+        <div class="fin-label">${escapeHtml(node.label)}</div>
+        <div class="fin-vals"><span class="fin-val">${fmtMoney(val.p)}</span><span class="fin-val">${fmtMoney(val.a)}</span></div>
+      </div>`;
+      html += finRenderTree(node.children, vals, editable, level+1);
+    }else{
+      html += `<div class="fin-row" style="padding-left:${pad}px;">
+        <div class="fin-label">${escapeHtml(node.label)}</div>
+        <div class="fin-vals">
+          ${editable ? `<input class="fin-input" type="number" step="0.01" inputmode="decimal" data-finkey="${node.key}" data-finfield="p" value="${val.p||''}" placeholder="0">` : `<span class="fin-val">${fmtMoney(val.p)}</span>`}
+          ${editable ? `<input class="fin-input" type="number" step="0.01" inputmode="decimal" data-finkey="${node.key}" data-finfield="a" value="${val.a||''}" placeholder="0">` : `<span class="fin-val">${fmtMoney(val.a)}</span>`}
+        </div>
+      </div>`;
+    }
+  });
+  return html;
+}
+function finRenderLeafRow(key, label, dados, editable){
+  const raw = (dados && dados[key]) || {};
+  const val = {p:Number(raw.p)||0, a:Number(raw.a)||0};
+  return `<div class="fin-row" style="padding-left:10px;">
+    <div class="fin-label">${escapeHtml(label)}</div>
+    <div class="fin-vals">
+      ${editable ? `<input class="fin-input" type="number" step="0.01" inputmode="decimal" data-finkey="${key}" data-finfield="p" value="${val.p||''}" placeholder="0">` : `<span class="fin-val">${fmtMoney(val.p)}</span>`}
+      ${editable ? `<input class="fin-input" type="number" step="0.01" inputmode="decimal" data-finkey="${key}" data-finfield="a" value="${val.a||''}" placeholder="0">` : `<span class="fin-val">${fmtMoney(val.a)}</span>`}
+    </div>
+  </div>`;
+}
+function renderFinanceiro(){
+  const anos = new Set(Object.keys(financeiro));
+  anos.add(finAno);
+  const anoOptions = Array.from(anos).sort();
+
+  let html = `<div class="fin-toolbar">
+    <select id="finSelAno">${anoOptions.map(a=>`<option value="${a}" ${a===finAno?'selected':''}>${a}</option>`).join('')}</select>
+    <div class="filter-row" style="margin:0; flex:0 0 auto;">
+      <button class="btn-toggle ${finModo==='mes'?'active':''}" id="btnFinMes">Mês</button>
+      <button class="btn-toggle ${finModo==='ano'?'active':''}" id="btnFinAno">Ano</button>
+    </div>
+  </div>`;
+
+  if(finModo==='mes'){
+    html += `<div class="fin-meses">`;
+    FIN_MESES.forEach((m,i)=>{
+      html += `<button class="fin-mes-btn ${i===finMesIdx?'active':''}" data-mesidx="${i}">${m.slice(0,3)}</button>`;
+    });
+    html += `</div>`;
+  }
+
+  const mesNome = FIN_MESES[finMesIdx];
+  const standaloneKeys = ['receitasNaoOp','despesasNaoOp','retiradaLucros','valorPagoMerc'];
+  let dados, editable;
+  if(finModo==='mes'){
+    dados = (financeiro[finAno] && financeiro[finAno][mesNome]) || {};
+    editable = true;
+  }else{
+    dados = {};
+    const allLeafKeys = [...finLeafKeys({children:FIN_TREE}), ...finLeafKeys(FIN_INVEST_TREE), ...standaloneKeys];
+    allLeafKeys.forEach(k=>{ dados[k] = {p:0,a:0}; });
+    FIN_MESES.forEach(m=>{
+      const md = (financeiro[finAno] && financeiro[finAno][m]) || {};
+      allLeafKeys.forEach(k=>{
+        const v = md[k]||{};
+        dados[k].p += Number(v.p)||0;
+        dados[k].a += Number(v.a)||0;
+      });
+    });
+    editable = false;
+  }
+
+  const vals = finEmptyValues(dados);
+  const resumo = finCalcResumo(dados);
+  const lucroAcumulado = finModo==='mes' ? finGetLucroAcumulado(finAno, finMesIdx) : resumo.lucroLiquido.a;
+
+  html += `<div class="metric-grid">
+    <div class="metric"><div class="label">Vendas (acontecido)</div><div class="value">${fmtMoney(vals.vendas.a)}</div></div>
+    <div class="metric"><div class="label">Lucro líquido</div><div class="value" style="color:${resumo.lucroLiquido.a>=0?'var(--revisao)':'var(--perda)'}">${fmtMoney(resumo.lucroLiquido.a)}</div></div>
+    <div class="metric"><div class="label">Margem de contribuição</div><div class="value">${fmtMoney(resumo.margem.a)}</div></div>
+    <div class="metric"><div class="label">Ponto de equilíbrio</div><div class="value">${fmtMoney(resumo.pontoEqOperacional.a)}</div></div>
+  </div>`;
+
+  html += `<div class="section-title">Plano de contas — ${finModo==='mes'?mesNome+' de '+finAno:('ano '+finAno)}</div>
+  <div class="card">
+    <div class="fin-row fin-header"><div class="fin-label">Discriminação</div><div class="fin-vals"><span class="fin-val">Planejado</span><span class="fin-val">Acontecido</span></div></div>
+    ${finRenderTree(FIN_TREE, vals, editable, 0)}
+  </div>`;
+
+  html += `<div class="section-title">Investimentos e outras receitas/despesas</div>
+  <div class="card">
+    ${finRenderLeafRow('receitasNaoOp','6. Receitas não Operacionais', dados, editable)}
+    ${finRenderLeafRow('despesasNaoOp','7. Despesas não Operacionais', dados, editable)}
+    <div class="fin-row fin-sum" style="padding-left:10px;"><div class="fin-label">${escapeHtml(FIN_INVEST_TREE.label)}</div><div class="fin-vals"><span class="fin-val">${fmtMoney(vals.investimentos.p)}</span><span class="fin-val">${fmtMoney(vals.investimentos.a)}</span></div></div>
+    ${finRenderTree(FIN_INVEST_TREE.children, vals, editable, 1)}
+    ${finRenderLeafRow('retiradaLucros','9. Retirada de Lucros', dados, editable)}
+    ${finRenderLeafRow('valorPagoMerc','13. Valor pago de Mercadorias', dados, editable)}
+  </div>`;
+
+  html += `<div class="section-title">Resumo</div>
+  <div class="card">
+    <div class="rate-row"><span>Margem de Contribuição</span><span>${fmtMoney(resumo.margem.a)}</span></div>
+    <div class="rate-row"><span>Custos Fixos</span><span>${fmtMoney(vals.custosFixos.a)}</span></div>
+    <div class="rate-row"><span>Lucro Operacional</span><span>${fmtMoney(resumo.lucroOp.a)}</span></div>
+    <div class="rate-row"><span>Investimentos</span><span>${fmtMoney(resumo.investimentos.a)}</span></div>
+    <div class="rate-row"><span>Retirada de Lucros</span><span>${fmtMoney(resumo.retiradaLucros.a)}</span></div>
+    <div class="stitch"></div>
+    <div class="item-top"><div class="item-title">Lucro Líquido</div><div class="item-right" style="color:${resumo.lucroLiquido.a>=0?'var(--revisao)':'var(--perda)'}">${fmtMoney(resumo.lucroLiquido.a)}</div></div>
+    <div class="stitch"></div>
+    <div class="rate-row"><span>Ponto de Equilíbrio Operacional</span><span>${fmtMoney(resumo.pontoEqOperacional.a)}</span></div>
+    <div class="rate-row"><span>Ponto de Equilíbrio Financeiro</span><span>${fmtMoney(resumo.pontoEqFinanceiro.a)}</span></div>
+    <div class="rate-row"><span>Avaliação do Estoque</span><span>${fmtMoney(resumo.avaliacaoEstoque.a)}</span></div>
+    <div class="rate-row"><span>Lucro Acumulado no ano</span><span>${fmtMoney(lucroAcumulado)}</span></div>
+  </div>`;
+
+  return html;
+}
+function attachFinanceiroHandlers(){
+  const selAno = document.getElementById('finSelAno');
+  if(selAno) selAno.onchange = ()=>{ finAno = selAno.value; render(); };
+  const btnMes = document.getElementById('btnFinMes');
+  const btnAno = document.getElementById('btnFinAno');
+  if(btnMes) btnMes.onclick = ()=>{ finModo='mes'; render(); };
+  if(btnAno) btnAno.onclick = ()=>{ finModo='ano'; render(); };
+  document.querySelectorAll('.fin-mes-btn').forEach(b=>{
+    b.onclick = ()=>{ finMesIdx = Number(b.dataset.mesidx); render(); };
+  });
+  document.querySelectorAll('.fin-input').forEach(inp=>{
+    inp.onchange = async ()=>{
+      const key = inp.dataset.finkey;
+      const field = inp.dataset.finfield;
+      const val = Number(inp.value)||0;
+      const ano = finAno, mes = FIN_MESES[finMesIdx];
+      if(!financeiro[ano]) financeiro[ano] = {};
+      if(!financeiro[ano][mes]) financeiro[ano][mes] = {};
+      if(!financeiro[ano][mes][key]) financeiro[ano][mes][key] = {p:0,a:0};
+      financeiro[ano][mes][key][field] = val;
+      await saveFinanceiro();
+      render();
+    };
+  });
+}
+
 function renderConfig(){
   let html = `<div class="card">
     <div class="item-top">
@@ -1539,6 +1902,7 @@ function openFormForTab(){
   else if(activeTab==='pagamentos') showToast('Registre o retorno de um lote para gerar pagamentos');
   else if(activeTab==='perdas') openPerdaForm();
   else if(activeTab==='materiaprima') openFornecedorForm();
+  else if(activeTab==='financeiro') showToast('Edite os valores direto nos campos da tabela');
   else if(activeTab==='config') openFuncionarioForm();
 }
 
