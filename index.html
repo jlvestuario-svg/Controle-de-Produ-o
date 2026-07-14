@@ -265,14 +265,46 @@ function getFirebaseAuth(){
 if(typeof window.storage === 'undefined' || !window.storage){
   window.storage = {
     async get(key){
-      const db = getFirebaseDb();
-      const snap = await db.collection('controle_producao_dados').doc(key).get();
-      if(!snap.exists) return null;
-      return {key, value: snap.data().value};
+      try{
+        if(firebaseAvailable){
+          const db = getFirebaseDb();
+          const snap = await db.collection('controle_producao_dados').doc(key).get();
+          if(!snap.exists) return null;
+          return {key, value: snap.data().value};
+        }
+      }catch(e){
+        console.warn('[Storage] Firebase get falhou, tentando localStorage:', e.message);
+      }
+
+      try{
+        const val = localStorage.getItem('jl_' + key);
+        if(!val) return null;
+        return {key, value: val};
+      }catch(e){
+        console.warn('[Storage] localStorage não disponível');
+        return null;
+      }
     },
     async set(key, value){
-      const db = getFirebaseDb();
-      await db.collection('controle_producao_dados').doc(key).set({value});
+      let success = false;
+      try{
+        if(firebaseAvailable){
+          const db = getFirebaseDb();
+          await db.collection('controle_producao_dados').doc(key).set({value});
+          success = true;
+        }
+      }catch(e){
+        console.warn('[Storage] Firebase set falhou:', e.message);
+      }
+
+      try{
+        localStorage.setItem('jl_' + key, value);
+        success = true;
+      }catch(e){
+        console.warn('[Storage] localStorage não disponível:', e.message);
+      }
+
+      if(!success) throw new Error('Nenhum storage disponível');
       return {key, value};
     }
   };
@@ -286,20 +318,54 @@ async function hashPassword(password){
   return hashArray.map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
+let firebaseAvailable = false;
+
 async function waitForFirebase(maxWait = 5000){
   const start = Date.now();
   while(typeof firebase === 'undefined' && Date.now() - start < maxWait){
     await new Promise(r => setTimeout(r, 100));
   }
-  if(typeof firebase === 'undefined') throw new Error('Firebase SDK não carregou');
+  if(typeof firebase === 'undefined'){
+    firebaseAvailable = false;
+    console.warn('[Firebase] SDK não carregou - usando modo offline');
+    return;
+  }
   while(!firebase.auth && Date.now() - start < maxWait){
     await new Promise(r => setTimeout(r, 100));
   }
-  if(!firebase.auth) throw new Error('Firebase Auth não disponível');
+  if(!firebase.auth){
+    firebaseAvailable = false;
+    console.warn('[Firebase] Auth não disponível - usando modo offline');
+    return;
+  }
+  firebaseAvailable = true;
+  console.log('[Firebase] Pronto para usar');
+}
+
+async function localSignUpUser(username, password){
+  const uid = 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  const email = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@jlvestuario.app`;
+  const hash = await hashPassword(password);
+  return {success: true, uid, email, localHash: hash};
+}
+
+async function localSignInUser(username, password){
+  const user = usuarios.find(u => u.nome.toLowerCase() === username.toLowerCase());
+  if(!user) return {success: false, error: 'Usuário não encontrado'};
+
+  const hash = await hashPassword(password);
+  if(hash !== user.hash) return {success: false, error: 'Senha incorreta'};
+
+  return {success: true, uid: user.id, email: user.email};
 }
 
 async function firebaseSignUpUser(username, password){
   await waitForFirebase();
+
+  if(!firebaseAvailable){
+    return localSignUpUser(username, password);
+  }
+
   const auth = firebase.auth();
   const email = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@jlvestuario.app`;
   try{
@@ -311,30 +377,40 @@ async function firebaseSignUpUser(username, password){
         const cred = await auth.signInWithEmailAndPassword(email, password);
         return {success: true, uid: cred.user.uid, email};
       }catch{
-        return {success: false, error: 'Email ou senha incorretos'};
+        return localSignUpUser(username, password);
       }
     }
-    return {success: false, error: err.message};
+    console.warn('[Firebase] Sign up falhou, usando modo offline:', err.message);
+    return localSignUpUser(username, password);
   }
 }
 
 async function firebaseSignInUser(username, password){
   await waitForFirebase();
+
+  if(!firebaseAvailable){
+    return localSignInUser(username, password);
+  }
+
   const auth = firebase.auth();
   const email = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@jlvestuario.app`;
   try{
     const cred = await auth.signInWithEmailAndPassword(email, password);
     return {success: true, uid: cred.user.uid, email};
   }catch(err){
-    return {success: false, error: 'Email ou senha incorretos'};
+    console.warn('[Firebase] Sign in falhou, tentando modo offline:', err.message);
+    return localSignInUser(username, password);
   }
 }
 
 async function firebaseSignOut(){
   try{
-    await waitForFirebase();
-    await firebase.auth().signOut();
-  }catch(e){}
+    if(firebaseAvailable){
+      await firebase.auth().signOut();
+    }
+  }catch(e){
+    console.warn('[Firebase] Sign out error:', e.message);
+  }
   return {success: true};
 }
 
@@ -922,6 +998,7 @@ function renderAuthScreen(){
         const authResult = await firebaseSignUpUser(nome, senha);
         if(!authResult.success){ showToast(authResult.error); return; }
         const u = {id:uid(), nome, papel:'admin', firebaseUid: authResult.uid};
+        if(authResult.localHash) u.hash = authResult.localHash;
         usuarios.push(u);
         await saveUsuarios();
         loginAs(u);
