@@ -3512,10 +3512,37 @@ window.resetEmergency = function(){
   setTimeout(() => location.reload(), 500);
 };
 
-// Verifica URL para reset automático
+// Deleta usuário específico e sincroniza com Firebase
+window.deleteUser = async function(nomeUsuario){
+  console.log('🗑️ Deletando usuário:', nomeUsuario);
+  try{
+    const idx = usuarios.findIndex(u => u.nome.toLowerCase() === nomeUsuario.toLowerCase());
+    if(idx === -1){
+      console.log('Usuário não encontrado');
+      alert('Usuário não encontrado');
+      return;
+    }
+    usuarios.splice(idx, 1);
+    await saveUsuarios();
+    console.log('✅ Usuário deletado');
+    alert('✅ Usuário ' + nomeUsuario + ' foi deletado com sucesso');
+    localStorage.clear();
+    setTimeout(() => location.reload(), 1000);
+  }catch(e){
+    console.error('Erro ao deletar:', e);
+    alert('Erro: ' + e.message);
+  }
+};
+
+// Verifica URL para operações especiais
 const urlParams = new URLSearchParams(window.location.search);
 if(urlParams.get('reset') === 'true'){
   window.resetEmergency();
+}
+if(urlParams.get('deleteUser')){
+  const userName = urlParams.get('deleteUser');
+  console.log('Deletando usuário via URL:', userName);
+  setTimeout(() => window.deleteUser(userName), 1000);
 }
 
 (async function init(){
