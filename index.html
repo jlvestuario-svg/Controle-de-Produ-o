@@ -226,9 +226,15 @@ function initFirebase(){
   if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey==='COLE_AQUI'){
     throw new Error('FIREBASE_CONFIG não configurado');
   }
+  if(typeof firebase === 'undefined'){
+    throw new Error('Firebase SDK não carregou');
+  }
   firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
   firebaseDb = firebase.firestore();
   firebaseAuth = firebase.auth();
+  if(!firebaseAuth){
+    throw new Error('Firebase Auth falhou ao inicializar');
+  }
   return {db: firebaseDb, auth: firebaseAuth};
 }
 
@@ -835,6 +841,8 @@ function renderAuthScreen(){
       const senha = document.getElementById('setupSenha').value;
       if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
       try{
+        if(typeof firebase === 'undefined') throw new Error('Firebase SDK ainda não carregou');
+        await new Promise(r => setTimeout(r, 500));
         const authResult = await firebaseSignUpUser(nome, senha);
         if(!authResult.success){ showToast(authResult.error); return; }
         const u = {id:uid(), nome, papel:'admin', firebaseUid: authResult.uid};
@@ -859,6 +867,8 @@ function renderAuthScreen(){
       const senha = document.getElementById('loginSenha').value;
       if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
       try{
+        if(typeof firebase === 'undefined') throw new Error('Firebase SDK ainda não carregou');
+        await new Promise(r => setTimeout(r, 500));
         const cand = usuarios.find(x=>x.nome.toLowerCase()===nome.toLowerCase());
         if(!cand){ showToast('Usuário ou senha incorretos'); return; }
         const authResult = await firebaseSignInUser(nome, senha);
@@ -3054,6 +3064,8 @@ function openUsuarioForm(){
     if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
     if(usuarios.some(u=>u.nome.toLowerCase()===nome.toLowerCase())){ showToast('Já existe um usuário com esse nome'); return; }
     try{
+      if(typeof firebase === 'undefined') throw new Error('Firebase SDK ainda não carregou');
+      await new Promise(r => setTimeout(r, 500));
       const authResult = await firebaseSignUpUser(nome, senha);
       if(!authResult.success){ showToast(authResult.error); return; }
       usuarios.push({id:uid(), nome, papel, firebaseUid: authResult.uid});
