@@ -268,17 +268,20 @@ function getFirebaseAuth(){
 if(typeof window.storage === 'undefined' || !window.storage){
   window.storage = {
     async get(key){
+      // Tenta sempre do Firebase primeiro (dados na nuvem)
       try{
-        if(firebaseAvailable){
-          const db = getFirebaseDb();
-          const snap = await db.collection('controle_producao_dados').doc(key).get();
-          if(!snap.exists) return null;
-          return {key, value: snap.data().value};
+        if(firebaseApp && firebaseDb){
+          const snap = await firebaseDb.collection('controle_producao_dados').doc(key).get();
+          if(snap.exists){
+            console.log('[Storage] Dados carregados do Firebase:', key);
+            return {key, value: snap.data().value};
+          }
         }
       }catch(e){
-        console.warn('[Storage] Firebase get falhou, tentando localStorage:', e.message);
+        console.warn('[Storage] Firebase get falhou:', e.message);
       }
 
+      // Se Firebase não tiver, tenta localStorage
       try{
         const val = localStorage.getItem('jl_' + key);
         if(!val) return null;
@@ -290,16 +293,18 @@ if(typeof window.storage === 'undefined' || !window.storage){
     },
     async set(key, value){
       let success = false;
+      // Tenta sempre no Firebase primeiro (salvar na nuvem)
       try{
-        if(firebaseAvailable){
-          const db = getFirebaseDb();
-          await db.collection('controle_producao_dados').doc(key).set({value});
+        if(firebaseApp && firebaseDb){
+          await firebaseDb.collection('controle_producao_dados').doc(key).set({value});
           success = true;
+          console.log('[Storage] Dados salvos no Firebase:', key);
         }
       }catch(e){
         console.warn('[Storage] Firebase set falhou:', e.message);
       }
 
+      // Também salva no localStorage como backup
       try{
         localStorage.setItem('jl_' + key, value);
         success = true;
