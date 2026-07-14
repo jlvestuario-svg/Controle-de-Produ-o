@@ -330,8 +330,14 @@ async function waitForFirebase(maxWait = 5000){
     console.warn('[Firebase] Auth não disponível - usando modo offline');
     return;
   }
-  firebaseAvailable = true;
-  console.log('[Firebase] Pronto para usar');
+  try {
+    initFirebase();
+    firebaseAvailable = true;
+    console.log('[Firebase] Pronto para usar');
+  } catch(err) {
+    firebaseAvailable = false;
+    console.warn('[Firebase] Erro ao inicializar:', err.message);
+  }
 }
 
 async function localSignUpUser(username, password){
