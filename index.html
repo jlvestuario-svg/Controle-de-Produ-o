@@ -222,7 +222,7 @@ let firebaseAuth = null;
 let firebaseApp = null;
 
 function initFirebase(){
-  if(firebaseApp) return {db: firebaseDb, auth: firebaseAuth};
+  if(firebaseApp && firebaseDb && firebaseAuth) return {db: firebaseDb, auth: firebaseAuth};
   if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey==='COLE_AQUI'){
     throw new Error('FIREBASE_CONFIG não configurado');
   }
@@ -230,16 +230,22 @@ function initFirebase(){
     throw new Error('Firebase SDK não carregou');
   }
   try {
-    firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
-    firebaseDb = firebase.firestore();
-    firebaseAuth = firebase.auth();
-    console.log('[Firebase] Inicializado com sucesso');
+    if(!firebaseApp) {
+      firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+      console.log('[Firebase] App inicializado');
+    }
+    if(!firebaseDb) {
+      firebaseDb = firebase.firestore();
+      console.log('[Firebase] Firestore inicializado');
+    }
+    if(!firebaseAuth) {
+      firebaseAuth = firebase.auth();
+      console.log('[Firebase] Auth inicializado');
+    }
+    console.log('[Firebase] Tudo pronto!');
   } catch(err) {
-    console.error('[Firebase] Erro na inicialização:', err.message);
+    console.error('[Firebase] Erro na inicialização:', err.code, err.message);
     throw err;
-  }
-  if(!firebaseAuth){
-    throw new Error('Firebase Auth falhou ao inicializar');
   }
   return {db: firebaseDb, auth: firebaseAuth};
 }
