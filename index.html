@@ -1041,6 +1041,7 @@ function renderAuthScreen(){
       <div class="field"><label>Senha</label><input id="loginSenha" type="password"></div>
       <button class="btn btn-primary" style="width:100%;" id="btnLogin">Entrar</button>
       <button class="btn" style="width:100%; margin-top:10px; background:rgba(100,150,255,.15); color:#6496ff;" id="btnNovoAdmin">➕ Criar novo administrador</button>
+      <button class="btn" style="width:100%; margin-top:10px; background:rgba(255,100,100,.2); color:#ff6464;" id="btnResetEmerg">🚨 Reset Emergencial</button>
       <button class="btn" style="width:100%; margin-top:10px; background:rgba(255,80,80,.2); color:#ff5050;" id="btnLimpar">🗑️ Limpar dados</button>
     </div></div>`;
     const tryLogin = async ()=>{
@@ -1065,6 +1066,11 @@ function renderAuthScreen(){
         localStorage.clear();
         usuarios = [];
         renderAuthScreen();
+      }
+    };
+    document.getElementById('btnResetEmerg').onclick = ()=>{
+      if(confirm('🚨 RESET EMERGENCIAL\n\nIsso vai limpar TUDO (dados, credenciais, cache). Você terá que criar um novo administrador.\n\nTem certeza?')){
+        window.resetEmergency();
       }
     };
     document.getElementById('btnLimpar').onclick = ()=>{
@@ -3484,6 +3490,33 @@ document.getElementById('fabBtn').onclick = openFormForTab;
   link.href = url;
   document.head.appendChild(link);
 })();
+
+// Reset de Emergência - limpa tudo e permite criar novo admin
+window.resetEmergency = function(){
+  console.log('🚨 RESET EMERGENCIAL: Limpando tudo...');
+  try{ localStorage.clear(); }catch(e){}
+  try{ sessionStorage.clear(); }catch(e){}
+  producao = [];
+  perdas = [];
+  config = [];
+  fornecedores = [];
+  insumosExtras = [];
+  usuarios = [];
+  recorrentes = [];
+  financeiro = [];
+  contasPagar = [];
+  contasAprendizado = [];
+  currentUser = null;
+  dataReady = true;
+  console.log('✅ Reset completo. Recarregando...');
+  setTimeout(() => location.reload(), 500);
+};
+
+// Verifica URL para reset automático
+const urlParams = new URLSearchParams(window.location.search);
+if(urlParams.get('reset') === 'true'){
+  window.resetEmergency();
+}
 
 (async function init(){
   render();
