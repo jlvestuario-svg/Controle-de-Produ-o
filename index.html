@@ -1040,6 +1040,7 @@ function renderAuthScreen(){
       <div class="field"><label>Nome</label><input id="loginNome" placeholder="Seu nome"></div>
       <div class="field"><label>Senha</label><input id="loginSenha" type="password"></div>
       <button class="btn btn-primary" style="width:100%;" id="btnLogin">Entrar</button>
+      <button class="btn" style="width:100%; margin-top:10px; background:rgba(100,150,255,.15); color:#6496ff;" id="btnNovoAdmin">➕ Criar novo administrador</button>
       <button class="btn" style="width:100%; margin-top:10px; background:rgba(255,80,80,.2); color:#ff5050;" id="btnLimpar">🗑️ Limpar dados</button>
     </div></div>`;
     const tryLogin = async ()=>{
@@ -1059,6 +1060,13 @@ function renderAuthScreen(){
     };
     document.getElementById('btnLogin').onclick = tryLogin;
     document.getElementById('loginSenha').onkeydown = (e)=>{ if(e.key==='Enter') tryLogin(); };
+    document.getElementById('btnNovoAdmin').onclick = ()=>{
+      if(confirm('⚠️ Vai substituir o administrador atual. Todos os usuários e dados locais serão resetados. Continuar?')){
+        localStorage.clear();
+        usuarios = [];
+        renderAuthScreen();
+      }
+    };
     document.getElementById('btnLimpar').onclick = ()=>{
       if(confirm('⚠️ Vai apagar TODOS os dados locais e resetar o app. Continuar?')){
         localStorage.clear();
