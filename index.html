@@ -220,6 +220,24 @@ const FIREBASE_CONFIG = {
 let firebaseDb = null;
 let firebaseAuth = null;
 let firebaseApp = null;
+let firebaseAvailable = false;
+
+// Inicializa Firebase imediatamente após scripts carregarem
+try {
+  if(typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== 'COLE_AQUI') {
+    firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+    firebaseDb = firebase.firestore();
+    firebaseAuth = firebase.auth();
+    firebaseAvailable = true;
+    console.log('[Firebase] ✅ Inicializado com sucesso');
+  } else {
+    console.warn('[Firebase] ⚠️ SDK não disponível ou config inválida');
+    firebaseAvailable = false;
+  }
+} catch(err) {
+  console.warn('[Firebase] ⚠️ Erro na inicialização:', err.message);
+  firebaseAvailable = false;
+}
 
 function initFirebase(){
   if(firebaseApp && firebaseDb && firebaseAuth) return {db: firebaseDb, auth: firebaseAuth};
@@ -229,25 +247,10 @@ function initFirebase(){
   if(typeof firebase === 'undefined'){
     throw new Error('Firebase SDK não carregou');
   }
-  try {
-    if(!firebaseApp) {
-      firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
-      console.log('[Firebase] App inicializado');
-    }
-    if(!firebaseDb) {
-      firebaseDb = firebase.firestore();
-      console.log('[Firebase] Firestore inicializado');
-    }
-    if(!firebaseAuth) {
-      firebaseAuth = firebase.auth();
-      console.log('[Firebase] Auth inicializado');
-    }
-    console.log('[Firebase] Tudo pronto!');
-  } catch(err) {
-    console.error('[Firebase] Erro na inicialização:', err.code, err.message);
-    throw err;
+  if(firebaseApp && firebaseDb && firebaseAuth) {
+    return {db: firebaseDb, auth: firebaseAuth};
   }
-  return {db: firebaseDb, auth: firebaseAuth};
+  throw new Error('Firebase não disponível');
 }
 
 function getFirebaseDb(){
@@ -310,33 +313,16 @@ if(typeof window.storage === 'undefined' || !window.storage){
   };
 }
 
-let firebaseAvailable = false;
-
 async function waitForFirebase(maxWait = 5000){
+  // Firebase já foi inicializado no carregamento da página
+  // Esta função apenas aguarda se necessário
+  if(firebaseAvailable) return;
   const start = Date.now();
-  while(typeof firebase === 'undefined' && Date.now() - start < maxWait){
+  while(!firebaseAvailable && Date.now() - start < maxWait){
     await new Promise(r => setTimeout(r, 100));
   }
-  if(typeof firebase === 'undefined'){
-    firebaseAvailable = false;
-    console.warn('[Firebase] SDK não carregou - usando modo offline');
-    return;
-  }
-  while(!firebase.auth && Date.now() - start < maxWait){
-    await new Promise(r => setTimeout(r, 100));
-  }
-  if(!firebase.auth){
-    firebaseAvailable = false;
-    console.warn('[Firebase] Auth não disponível - usando modo offline');
-    return;
-  }
-  try {
-    initFirebase();
-    firebaseAvailable = true;
-    console.log('[Firebase] Pronto para usar');
-  } catch(err) {
-    firebaseAvailable = false;
-    console.warn('[Firebase] Erro ao inicializar:', err.message);
+  if(!firebaseAvailable){
+    console.warn('[Firebase] Usando modo offline');
   }
 }
 
