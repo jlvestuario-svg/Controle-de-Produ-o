@@ -320,6 +320,8 @@ let usuarios = [];
 let financeiro = {};
 let contasPagar = [];
 let contasAprendizado = {};
+let recorrentes = [];
+let contasPagarFiltro = 'todas';
 let currentUser = null;
 let activeTab = 'dashboard';
 let dashFiltroEtapa = 'todas';
@@ -803,6 +805,7 @@ async function loadAll(){
   fornecedores = await loadCollection('fornecedores', migrateFornecedor);
   insumosExtras = await loadCollection('insumosExtras', migrateInsumoExtra);
   usuarios = await loadCollection('usuarios', null);
+  recorrentes = await loadCollection('recorrentes', null);
   financeiro = await loadFinanceiro();
   contasPagar = await loadCollection('contasPagar', migrateContaPagar);
   contasAprendizado = await loadContasAprendizado();
@@ -814,6 +817,44 @@ async function saveConfig(){ try{ await window.storage.set('config', JSON.string
 async function saveFornecedores(){ try{ await window.storage.set('fornecedores', JSON.stringify(fornecedores)); }catch(e){ showToast('Erro ao salvar'); } }
 async function saveInsumosExtras(){ try{ await window.storage.set('insumosExtras', JSON.stringify(insumosExtras)); }catch(e){ showToast('Erro ao salvar'); } }
 async function saveUsuarios(){ try{ await window.storage.set('usuarios', JSON.stringify(usuarios)); }catch(e){ showToast('Erro ao salvar'); } }
+async function saveRecorrentes(){ try{ await window.storage.set('recorrentes', JSON.stringify(recorrentes)); }catch(e){ showToast('Erro ao salvar'); } }
+
+async function provisonarProxMes(){
+  const hoje = new Date();
+  const proxMes = new Date(hoje.getFullYear(), hoje.getMonth()+1, 1);
+  const mesProv = proxMes.getMonth() + 1;
+  const anoProv = proxMes.getFullYear();
+
+  let criadas = 0;
+  const preview = [];
+
+  for(const rec of recorrentes){
+    const dia = parseInt(rec.dia) || 1;
+    const dtVenc = new Date(anoProv, mesProv-1, dia);
+    const dtVencStr = dtVenc.toISOString().slice(0,10);
+
+    if(!contasPagar.find(c=>c.fornecedor===rec.fornecedor && c.vencimento===dtVencStr)){
+      contasPagar.push({
+        id: uid(),
+        fornecedor: rec.fornecedor,
+        valor: parseFloat(rec.valor)||0,
+        vencimento: dtVencStr,
+        categoria: rec.categoria||'Recorrente',
+        status: 'aberta',
+        recorrente: true,
+        dataCriacao: todayStr()
+      });
+      criadas++;
+      preview.push(`${dia.toString().padStart(2,'0')}/${mesProv.toString().padStart(2,'0')}: ${rec.fornecedor} - ${fmtMoney(rec.valor)}`);
+    }
+  }
+
+  if(criadas===0){ showToast('Nenhuma recorrente para provisionar'); return; }
+
+  await saveContasPagar();
+  showToast(`${criadas} contas provisionadas para ${mesProv}/${anoProv}`);
+  render();
+}
 
 // ===================== LOGIN / PERMISSÕES =====================
 // Papéis: 'admin' (acesso total) · 'colaborador' (só Painel/Produção/Revisão, sem editar/excluir)
@@ -2160,6 +2201,29 @@ function renderConfig(){
     </div>
   </div>`;
 
+  html += `<div class="section-title">Pagamentos Recorrentes<button class="btn" data-action="novoRecorrente">+ Recorrente</button><button class="btn btn-primary" data-action="provisionar" style="margin-left:6px;">📅 Provisionar</button></div>`;
+  if(recorrentes.length===0){
+    html += `<div class="empty">Nenhum pagamento recorrente cadastrado.</div>`;
+  }else{
+    const naoProvisionadas = recorrentes.length;
+    html += `<div class="card" style="background:var(--accent-soft); border-color:var(--accent); margin-bottom:12px;">
+      <div class="item-sub" style="color:var(--accent);">⚠️ Você tem ${naoProvisionadas} recorrente${naoProvisionadas!==1?'s':''} não provisionada${naoProvisionadas!==1?'s':''}</div>
+    </div>`;
+    html += `<div class="card">`;
+    recorrentes.forEach(r=>{
+      html += `<div class="item">
+        <div class="item-top">
+          <div><div class="item-title">${escapeHtml(r.fornecedor)}</div><div class="item-sub">Dia ${r.dia} · ${fmtMoney(r.valor)} · ${escapeHtml(r.categoria||'Recorrente')}</div></div>
+        </div>
+        <div class="item-actions">
+          <button class="btn" data-action="editarRecorrente" data-id="${r.id}">Editar</button>
+          <button class="btn btn-danger" data-action="delRecorrente" data-id="${r.id}">Excluir</button>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
   html += `<div class="section-title">Usuários do app (login)<button class="btn" data-action="novoUsuario">+ Usuário</button></div>`;
   if(usuarios.length===0){
     html += `<div class="empty">Nenhum usuário cadastrado.</div>`;
@@ -2282,6 +2346,15 @@ function attachDynamicHandlers(){
       }else if(action==='delInsumoExtra'){
         insumosExtras = insumosExtras.filter(i=>i.id!==id);
         await saveInsumosExtras(); render(); showToast('Insumo removido');
+      }else if(action==='novoRecorrente'){
+        openRecorrenteForm();
+      }else if(action==='editarRecorrente'){
+        openEditarRecorrenteForm(id);
+      }else if(action==='delRecorrente'){
+        recorrentes = recorrentes.filter(r=>r.id!==id);
+        await saveRecorrentes(); render(); showToast('Recorrente removida');
+      }else if(action==='provisionar'){
+        await provisonarProxMes();
       }else if(action==='novoUsuario'){
         openUsuarioForm();
       }else if(action==='editarUsuario'){
@@ -3030,6 +3103,56 @@ function openEditarFuncionarioForm(funcId){
       await saveProducao();
     }
     await saveConfig(); closeModal(); render(); showToast('Dados atualizados');
+  };
+}
+
+function openRecorrenteForm(){
+  openModal(`
+    <h3>Novo Pagamento Recorrente</h3>
+    <div class="field"><label>Fornecedor/Descrição</label><input id="f_rFornecedor" placeholder="Ex: Aluguel, Energia, Salário"></div>
+    <div class="field"><label>Valor</label><input id="f_rValor" type="number" placeholder="0.00" step="0.01"></div>
+    <div class="field"><label>Dia do mês</label><input id="f_rDia" type="number" min="1" max="31" placeholder="5"></div>
+    <div class="field"><label>Categoria</label><input id="f_rCategoria" placeholder="Ex: Salário, Aluguel, Consultoria"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="saveRecorrente">Salvar</button>
+    </div>
+  `);
+  document.getElementById('saveRecorrente').onclick = async ()=>{
+    const fornecedor = document.getElementById('f_rFornecedor').value.trim();
+    const valor = parseFloat(document.getElementById('f_rValor').value);
+    const dia = parseInt(document.getElementById('f_rDia').value);
+    const categoria = document.getElementById('f_rCategoria').value.trim();
+    if(!fornecedor || !valor || !dia || dia<1 || dia>31){ showToast('Preencha todos os campos corretamente'); return; }
+    recorrentes.push({id:uid(), fornecedor, valor, dia, categoria});
+    await saveRecorrentes(); closeModal(); render(); showToast('Recorrente adicionada');
+  };
+}
+
+function openEditarRecorrenteForm(rId){
+  const r = recorrentes.find(x=>x.id===rId);
+  openModal(`
+    <h3>Editar Pagamento Recorrente</h3>
+    <div class="field"><label>Fornecedor/Descrição</label><input id="f_rFornecedor" value="${escapeHtml(r.fornecedor)}"></div>
+    <div class="field"><label>Valor</label><input id="f_rValor" type="number" value="${r.valor}" step="0.01"></div>
+    <div class="field"><label>Dia do mês</label><input id="f_rDia" type="number" min="1" max="31" value="${r.dia}"></div>
+    <div class="field"><label>Categoria</label><input id="f_rCategoria" value="${escapeHtml(r.categoria||'')}"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="saveRecorrenteEdit">Salvar</button>
+    </div>
+  `);
+  document.getElementById('saveRecorrenteEdit').onclick = async ()=>{
+    const fornecedor = document.getElementById('f_rFornecedor').value.trim();
+    const valor = parseFloat(document.getElementById('f_rValor').value);
+    const dia = parseInt(document.getElementById('f_rDia').value);
+    const categoria = document.getElementById('f_rCategoria').value.trim();
+    if(!fornecedor || !valor || !dia || dia<1 || dia>31){ showToast('Preencha todos os campos corretamente'); return; }
+    r.fornecedor = fornecedor;
+    r.valor = valor;
+    r.dia = dia;
+    r.categoria = categoria;
+    await saveRecorrentes(); closeModal(); render(); showToast('Recorrente atualizada');
   };
 }
 
