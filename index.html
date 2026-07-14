@@ -271,10 +271,23 @@ if(typeof window.storage === 'undefined' || !window.storage){
       // Tenta sempre do Firebase primeiro (dados na nuvem)
       try{
         if(firebaseApp && firebaseDb){
-          const snap = await firebaseDb.collection('controle_producao_dados').doc(key).get();
+          // Primeiro tenta como documento dentro de controle_producao_dados
+          let snap = await firebaseDb.collection('controle_producao_dados').doc(key).get();
           if(snap.exists){
-            console.log('[Storage] Dados carregados do Firebase:', key);
+            console.log('[Storage] Dados carregados do Firebase (controle_producao_dados):', key);
             return {key, value: snap.data().value};
+          }
+
+          // Se não encontrou, tenta como coleção separada (produção, config, etc)
+          const collectionRef = firebaseDb.collection(key);
+          const snapshot = await collectionRef.get();
+          if(!snapshot.empty){
+            const arr = [];
+            snapshot.forEach(doc => {
+              arr.push({id: doc.id, ...doc.data()});
+            });
+            console.log('[Storage] Dados carregados do Firebase (coleção):', key, arr.length, 'registros');
+            return {key, value: JSON.stringify(arr)};
           }
         }
       }catch(e){
