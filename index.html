@@ -919,17 +919,41 @@ async function loadCollection(key, migrateFn){
 }
 
 async function loadAll(){
+  console.log('[LoadAll] Iniciando carregamento de dados...');
+  console.log('[LoadAll] firebaseApp:', !!firebaseApp, 'firebaseDb:', !!firebaseDb, 'firebaseAvailable:', firebaseAvailable);
+
   producao = await loadCollection('producao', migrateLote);
+  console.log('[LoadAll] Produção:', producao.length);
+
   perdas = await loadCollection('perdas', null);
+  console.log('[LoadAll] Perdas:', perdas.length);
+
   config = await loadCollection('config', null);
+  console.log('[LoadAll] Config:', config.length);
+
   fornecedores = await loadCollection('fornecedores', migrateFornecedor);
+  console.log('[LoadAll] Fornecedores:', fornecedores.length);
+
   insumosExtras = await loadCollection('insumosExtras', migrateInsumoExtra);
+  console.log('[LoadAll] Insumos Extras:', insumosExtras.length);
+
   usuarios = await loadCollection('usuarios', null);
+  console.log('[LoadAll] Usuários:', usuarios.length);
+
   recorrentes = await loadCollection('recorrentes', null);
+  console.log('[LoadAll] Recorrentes:', recorrentes.length);
+
   financeiro = await loadFinanceiro();
+  console.log('[LoadAll] Financeiro carregado');
+
   contasPagar = await loadCollection('contasPagar', migrateContaPagar);
+  console.log('[LoadAll] Contas a Pagar:', contasPagar.length);
+
   contasAprendizado = await loadContasAprendizado();
+  console.log('[LoadAll] Contas Aprendizado carregado');
+
   dataReady = true;
+  console.log('[LoadAll] ✅ Todos os dados carregados!');
 }
 async function saveProducao(){ try{ await window.storage.set('producao', JSON.stringify(producao)); }catch(e){ showToast('Erro ao salvar'); } }
 async function savePerdas(){ try{ await window.storage.set('perdas', JSON.stringify(perdas)); }catch(e){ showToast('Erro ao salvar'); } }
