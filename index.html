@@ -3481,6 +3481,33 @@ document.getElementById('fabBtn').onclick = openFormForTab;
   }
   applyAuthState();
 })();
+
+// Função de EMERGÊNCIA para restaurar dados do Firebase
+window.restaurarDados = async function(){
+  console.log('🔄 RESTAURANDO DADOS DO FIREBASE...');
+  try {
+    producao = await loadCollection('producao', migrateLote);
+    perdas = await loadCollection('perdas', null);
+    config = await loadCollection('config', null);
+    fornecedores = await loadCollection('fornecedores', migrateFornecedor);
+    insumosExtras = await loadCollection('insumosExtras', migrateInsumoExtra);
+    usuarios = await loadCollection('usuarios', null);
+    recorrentes = await loadCollection('recorrentes', null);
+    financeiro = await loadFinanceiro();
+    contasPagar = await loadCollection('contasPagar', migrateContaPagar);
+    contasAprendizado = await loadContasAprendizado();
+    dataReady = true;
+    render();
+    console.log('✅ DADOS RESTAURADOS!');
+    console.log('Produção:', producao.length);
+    console.log('Fornecedores:', fornecedores.length);
+    console.log('Config:', config.length);
+    showToast('✅ Dados restaurados com sucesso!');
+  } catch(e) {
+    console.error('❌ Erro ao restaurar:', e);
+    showToast('❌ Erro ao restaurar dados');
+  }
+};
 </script>
 </body>
 </html>
