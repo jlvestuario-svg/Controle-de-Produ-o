@@ -145,6 +145,7 @@
   .fin-sum{font-weight:700; background:var(--surface-2); border-radius:6px; padding:8px 10px;}
   .fin-sum .fin-label{font-weight:700;}
   .fin-header{font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-dim); font-weight:700; border-bottom:2px solid var(--border);}
+  .fin-header .fin-val{white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15;}
   @media (min-width:900px){
     .fin-val, .fin-input{width:100px; font-size:12.5px;}
   }
@@ -270,6 +271,10 @@ let dataReady = false;
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function fmtMoney(v){ return (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+async function hashPassword(senha){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(senha));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 
 // ===================== FINANCEIRO (Planejado x Acontecido) =====================
 const FIN_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -767,7 +772,7 @@ function renderAuthScreen(){
       const nome = document.getElementById('setupNome').value.trim();
       const senha = document.getElementById('setupSenha').value;
       if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
-      const u = {id:uid(), nome, senha, papel:'admin'};
+      const u = {id:uid(), nome, senha: await hashPassword(senha), papel:'admin'};
       usuarios.push(u);
       await saveUsuarios();
       loginAs(u);
@@ -781,12 +786,16 @@ function renderAuthScreen(){
       <div class="field"><label>Senha</label><input id="loginSenha" type="password"></div>
       <button class="btn btn-primary" style="width:100%;" id="btnLogin">Entrar</button>
     </div></div>`;
-    const tryLogin = ()=>{
+    const tryLogin = async ()=>{
       const nome = document.getElementById('loginNome').value.trim();
       const senha = document.getElementById('loginSenha').value;
-      const u = usuarios.find(x=>x.nome.toLowerCase()===nome.toLowerCase() && x.senha===senha);
-      if(!u){ showToast('Usuário ou senha incorretos'); return; }
-      loginAs(u);
+      const cand = usuarios.find(x=>x.nome.toLowerCase()===nome.toLowerCase());
+      if(!cand){ showToast('Usuário ou senha incorretos'); return; }
+      const hash = await hashPassword(senha);
+      const legacyMatch = cand.senha === senha && cand.senha.length !== 64;
+      if(cand.senha !== hash && !legacyMatch){ showToast('Usuário ou senha incorretos'); return; }
+      if(legacyMatch){ cand.senha = hash; await saveUsuarios(); }
+      loginAs(cand);
     };
     document.getElementById('btnLogin').onclick = tryLogin;
     document.getElementById('loginSenha').onkeydown = (e)=>{ if(e.key==='Enter') tryLogin(); };
@@ -2972,7 +2981,7 @@ function openUsuarioForm(){
     const papel = document.getElementById('f_uPapel').value;
     if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
     if(usuarios.some(u=>u.nome.toLowerCase()===nome.toLowerCase())){ showToast('Já existe um usuário com esse nome'); return; }
-    usuarios.push({id:uid(), nome, senha, papel});
+    usuarios.push({id:uid(), nome, senha: await hashPassword(senha), papel});
     await saveUsuarios(); closeModal(); render(); showToast('Usuário criado');
   };
 }
@@ -2997,7 +3006,7 @@ function openEditarUsuarioForm(uId){
     const senha = document.getElementById('f_uSenha').value;
     if(!nome){ showToast('Preencha o nome'); return; }
     u.nome = nome;
-    if(senha) u.senha = senha;
+    if(senha) u.senha = await hashPassword(senha);
     u.papel = document.getElementById('f_uPapel').value;
     await saveUsuarios(); closeModal(); render(); showToast('Usuário atualizado');
     if(currentUser && currentUser.id===u.id){ currentUser = u; updateUserBadge(); }
