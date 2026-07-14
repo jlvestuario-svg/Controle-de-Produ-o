@@ -1005,34 +1005,7 @@ async function provisonarProxMes(){
 function renderAuthScreen(){
   const el = document.getElementById('authScreen');
   const logo = `<img class="auth-logo" src="logo.png" alt="JL Vestuário">`;
-  if(usuarios.length===0){
-    el.innerHTML = `<div style="max-width:320px; width:100%;">
-      ${logo}
-      <div class="card">
-      <h3 style="margin-top:0;">Criar administrador</h3>
-      <div class="item-sub" style="margin-bottom:14px;">Primeiro acesso: crie o usuário principal (acesso total ao app).</div>
-      <div class="field"><label>Nome</label><input id="setupNome" placeholder="Ex: Gabriel"></div>
-      <div class="field"><label>Senha</label><input id="setupSenha" type="password"></div>
-      <button class="btn btn-primary" style="width:100%;" id="btnSetup">Criar e entrar</button>
-    </div></div>`;
-    document.getElementById('btnSetup').onclick = async ()=>{
-      const nome = document.getElementById('setupNome').value.trim();
-      const senha = document.getElementById('setupSenha').value;
-      if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
-      showToast('Criando usuário...');
-      try{
-        const authResult = await firebaseSignUpUser(nome, senha);
-        if(!authResult.success){ showToast(authResult.error); return; }
-        const u = {id:uid(), nome, papel:'admin', firebaseUid: authResult.uid};
-        if(authResult.localHash) u.hash = authResult.localHash;
-        usuarios.push(u);
-        await saveUsuarios();
-        loginAs(u);
-      }catch(e){
-        showToast('Erro ao criar usuário: ' + e.message);
-      }
-    };
-  }else{
+  {
     el.innerHTML = `<div style="max-width:320px; width:100%;">
       ${logo}
       <div class="card">
@@ -1040,9 +1013,6 @@ function renderAuthScreen(){
       <div class="field"><label>Nome</label><input id="loginNome" placeholder="Seu nome"></div>
       <div class="field"><label>Senha</label><input id="loginSenha" type="password"></div>
       <button class="btn btn-primary" style="width:100%;" id="btnLogin">Entrar</button>
-      <button class="btn" style="width:100%; margin-top:10px; background:rgba(100,150,255,.15); color:#6496ff;" id="btnNovoAdmin">➕ Criar novo administrador</button>
-      <button class="btn" style="width:100%; margin-top:10px; background:rgba(255,100,100,.2); color:#ff6464;" id="btnResetEmerg">🚨 Reset Emergencial</button>
-      <button class="btn" style="width:100%; margin-top:10px; background:rgba(255,80,80,.2); color:#ff5050;" id="btnLimpar">🗑️ Limpar dados</button>
     </div></div>`;
     const tryLogin = async ()=>{
       const nome = document.getElementById('loginNome').value.trim();
@@ -1061,24 +1031,6 @@ function renderAuthScreen(){
     };
     document.getElementById('btnLogin').onclick = tryLogin;
     document.getElementById('loginSenha').onkeydown = (e)=>{ if(e.key==='Enter') tryLogin(); };
-    document.getElementById('btnNovoAdmin').onclick = ()=>{
-      if(confirm('⚠️ Vai substituir o administrador atual. Todos os usuários e dados locais serão resetados. Continuar?')){
-        localStorage.clear();
-        usuarios = [];
-        renderAuthScreen();
-      }
-    };
-    document.getElementById('btnResetEmerg').onclick = ()=>{
-      if(confirm('🚨 RESET EMERGENCIAL\n\nIsso vai limpar TUDO (dados, credenciais, cache). Você terá que criar um novo administrador.\n\nTem certeza?')){
-        window.resetEmergency();
-      }
-    };
-    document.getElementById('btnLimpar').onclick = ()=>{
-      if(confirm('⚠️ Vai apagar TODOS os dados locais e resetar o app. Continuar?')){
-        localStorage.clear();
-        location.reload();
-      }
-    };
   }
 }
 function loginAs(u){
