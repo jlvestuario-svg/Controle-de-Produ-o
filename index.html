@@ -1867,14 +1867,20 @@ function renderContasPagar(){
   const leaves = finAllLeaves();
   const leafLabel = key => { const l = leaves.find(x=>x.key===key); return l ? l.label : '—'; };
 
-  // opções de mês/ano com base no que existe nos dados (vencimento ou pagamento)
+  let lista;
+  if(contasFiltro==='abertas') lista = naoHistorico.filter(c=>c.status!=='pago').sort((a,b)=>(a.dataVencimento||'').localeCompare(b.dataVencimento||''));
+  else if(contasFiltro==='pagas') lista = naoHistorico.filter(c=>c.status==='pago').sort((a,b)=>(b.dataPagamento||'').localeCompare(a.dataPagamento||''));
+  else lista = contasPagar.filter(c=>c.historico).sort((a,b)=>(b.dataVencimento||'').localeCompare(a.dataVencimento||''));
+
+  // opções de mês/ano com base só no que existe DENTRO da aba atual (Em aberto/Pagas/Histórico)
   const mesesSet = new Set();
-  contasPagar.forEach(c=>{
+  lista.forEach(c=>{
     if(c.dataVencimento) mesesSet.add(c.dataVencimento.slice(0,7));
     if(c.dataPagamento) mesesSet.add(c.dataPagamento.slice(0,7));
   });
   const mesesOptions = Array.from(mesesSet).sort();
   const fmtMesOpt = ym => { const [y,m]=ym.split('-'); return FIN_MESES[Number(m)-1]+'/'+y; };
+  if(contasFiltroMes && !mesesOptions.includes(contasFiltroMes)) contasFiltroMes = '';
 
   html += `<div class="field"><input id="cp_busca" placeholder="Buscar por fornecedor ou descrição..." value="${escapeHtml(contasBusca)}"></div>
   <div class="row2">
@@ -1887,11 +1893,6 @@ function renderContasPagar(){
       ${mesesOptions.map(m=>`<option value="${m}" ${contasFiltroMes===m?'selected':''}>${fmtMesOpt(m)}</option>`).join('')}
     </select></div>
   </div>`;
-
-  let lista;
-  if(contasFiltro==='abertas') lista = naoHistorico.filter(c=>c.status!=='pago').sort((a,b)=>(a.dataVencimento||'').localeCompare(b.dataVencimento||''));
-  else if(contasFiltro==='pagas') lista = naoHistorico.filter(c=>c.status==='pago').sort((a,b)=>(b.dataPagamento||'').localeCompare(a.dataPagamento||''));
-  else lista = contasPagar.filter(c=>c.historico).sort((a,b)=>(b.dataVencimento||'').localeCompare(a.dataVencimento||''));
 
   if(contasBusca.trim()){
     const q = normalizeTxt(contasBusca);
