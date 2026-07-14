@@ -479,6 +479,11 @@ function finAllLeaves(){
   out.push({key:'retiradaLucros', label:'Retirada de Lucros', path:''});
   return out;
 }
+const FIN_RECEITA_KEYS = ['shopee','tiktok','ml','shein','drop'];
+function finExpenseLeaves(){
+  // contas a pagar são sempre despesas — nunca deixa escolher uma categoria de receita (Vendas)
+  return finAllLeaves().filter(l=>!FIN_RECEITA_KEYS.includes(l.key));
+}
 function normalizeTxt(s){
   return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
 }
@@ -1864,7 +1869,7 @@ function renderContasPagar(){
     <button class="btn-toggle ${contasFiltro==='historico'?'active':''}" id="btnContasHistorico">Histórico</button>
   </div>`;
 
-  const leaves = finAllLeaves();
+  const leaves = finExpenseLeaves();
   const leafLabel = key => { const l = leaves.find(x=>x.key===key); return l ? l.label : '—'; };
 
   let lista;
@@ -1872,9 +1877,9 @@ function renderContasPagar(){
   else if(contasFiltro==='pagas') lista = naoHistorico.filter(c=>c.status==='pago').sort((a,b)=>(b.dataPagamento||'').localeCompare(a.dataPagamento||''));
   else lista = contasPagar.filter(c=>c.historico).sort((a,b)=>(b.dataVencimento||'').localeCompare(a.dataVencimento||''));
 
-  // opções de mês/ano com base só no que existe DENTRO da aba atual (Em aberto/Pagas/Histórico)
+  // opções de mês/ano com base em todas as contas (não muda conforme o filtro de status, pra ficar previsível)
   const mesesSet = new Set();
-  lista.forEach(c=>{
+  contasPagar.forEach(c=>{
     if(c.dataVencimento) mesesSet.add(c.dataVencimento.slice(0,7));
     if(c.dataPagamento) mesesSet.add(c.dataPagamento.slice(0,7));
   });
@@ -1882,6 +1887,7 @@ function renderContasPagar(){
   const fmtMesOpt = ym => { const [y,m]=ym.split('-'); return FIN_MESES[Number(m)-1]+'/'+y; };
   if(contasFiltroMes && !mesesOptions.includes(contasFiltroMes)) contasFiltroMes = '';
 
+  const temFiltroAtivo = !!(contasBusca.trim() || contasFiltroCategoria || contasFiltroMes);
   html += `<div class="field"><input id="cp_busca" placeholder="Buscar por fornecedor ou descrição..." value="${escapeHtml(contasBusca)}"></div>
   <div class="row2">
     <div class="field"><select id="cp_filtroCategoria">
@@ -1892,7 +1898,8 @@ function renderContasPagar(){
       <option value="">Todos os meses</option>
       ${mesesOptions.map(m=>`<option value="${m}" ${contasFiltroMes===m?'selected':''}>${fmtMesOpt(m)}</option>`).join('')}
     </select></div>
-  </div>`;
+  </div>
+  ${temFiltroAtivo ? `<button class="btn" id="btnLimparFiltrosContas" style="margin-bottom:12px;">✕ Limpar filtros</button>` : ''}`;
 
   if(contasBusca.trim()){
     const q = normalizeTxt(contasBusca);
@@ -1906,7 +1913,8 @@ function renderContasPagar(){
   }
 
   if(lista.length===0){
-    html += `<div class="empty">Nenhuma conta encontrada.</div>`;
+    const abaLabel = contasFiltro==='abertas'?'Em aberto':(contasFiltro==='pagas'?'Pagas':'Histórico');
+    html += `<div class="empty">Nenhuma conta encontrada na aba "${abaLabel}"${temFiltroAtivo?' com esses filtros':''}.${temFiltroAtivo?' Tente limpar os filtros ou trocar de aba.':''}</div>`;
     return html;
   }
 
@@ -1934,7 +1942,7 @@ function renderContasPagar(){
 }
 
 function openContaPagarForm(){
-  const leaves = finAllLeaves();
+  const leaves = finExpenseLeaves();
   openModal(`
     <h3>Nova conta a pagar</h3>
     <div class="field"><label>Fornecedor</label><input id="cp_fornecedor" placeholder="Ex: Sabesp, Contador, Costureira..."></div>
@@ -2004,7 +2012,7 @@ function wireContaPagarSuggestion(){
 }
 function openEditarContaPagarForm(contaId){
   const c = contasPagar.find(x=>x.id===contaId);
-  const leaves = finAllLeaves();
+  const leaves = finExpenseLeaves();
   openModal(`
     <h3>Editar conta a pagar</h3>
     <div class="field"><label>Fornecedor</label><input id="cp_fornecedor" value="${escapeHtml(c.fornecedor)}"></div>
@@ -2238,6 +2246,8 @@ function attachDynamicHandlers(){
   }
   if(cpFiltroCategoria) cpFiltroCategoria.onchange = ()=>{ contasFiltroCategoria = cpFiltroCategoria.value; render(); };
   if(cpFiltroMes) cpFiltroMes.onchange = ()=>{ contasFiltroMes = cpFiltroMes.value; render(); };
+  const btnLimpar = document.getElementById('btnLimparFiltrosContas');
+  if(btnLimpar) btnLimpar.onclick = ()=>{ contasBusca=''; contasFiltroCategoria=''; contasFiltroMes=''; render(); };
 }
 
 function buildResumoMensal(){
