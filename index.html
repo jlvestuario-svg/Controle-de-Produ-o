@@ -229,9 +229,15 @@ function initFirebase(){
   if(typeof firebase === 'undefined'){
     throw new Error('Firebase SDK não carregou');
   }
-  firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
-  firebaseDb = firebase.firestore();
-  firebaseAuth = firebase.auth();
+  try {
+    firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+    firebaseDb = firebase.firestore();
+    firebaseAuth = firebase.auth();
+    console.log('[Firebase] Inicializado com sucesso');
+  } catch(err) {
+    console.error('[Firebase] Erro na inicialização:', err.message);
+    throw err;
+  }
   if(!firebaseAuth){
     throw new Error('Firebase Auth falhou ao inicializar');
   }
@@ -267,12 +273,22 @@ if(typeof window.storage === 'undefined' || !window.storage){
 }
 
 async function firebaseSignUpUser(username, password){
-  const auth = getFirebaseAuth();
+  let auth;
+  try {
+    auth = getFirebaseAuth();
+    if(!auth || !auth.createUserWithEmailAndPassword) {
+      throw new Error('Firebase Auth não está disponível');
+    }
+  } catch(e) {
+    console.error('[Firebase] Erro ao obter auth:', e.message);
+    throw e;
+  }
   const email = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@controle.local`;
   try{
     const cred = await auth.createUserWithEmailAndPassword(email, password);
     return {success: true, uid: cred.user.uid, email};
   }catch(err){
+    console.error('[Firebase] Erro ao criar usuário:', err.code, err.message);
     if(err.code === 'auth/email-already-in-use'){
       try{
         const cred = await auth.signInWithEmailAndPassword(email, password);
@@ -842,7 +858,9 @@ function renderAuthScreen(){
       if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
       try{
         if(typeof firebase === 'undefined') throw new Error('Firebase SDK ainda não carregou');
-        await new Promise(r => setTimeout(r, 500));
+        console.log('[Setup] Aguardando Firebase estar pronto...');
+        await new Promise(r => setTimeout(r, 1500));
+        console.log('[Setup] Tentando criar usuário...');
         const authResult = await firebaseSignUpUser(nome, senha);
         if(!authResult.success){ showToast(authResult.error); return; }
         const u = {id:uid(), nome, papel:'admin', firebaseUid: authResult.uid};
@@ -850,6 +868,7 @@ function renderAuthScreen(){
         await saveUsuarios();
         loginAs(u);
       }catch(e){
+        console.error('[Setup] Erro:', e.message);
         showToast('Erro ao criar usuário: ' + e.message);
       }
     };
@@ -3213,6 +3232,16 @@ document.getElementById('fabBtn').onclick = openFormForTab;
 })();
 
 (async function init(){
+  console.log('[Init] Aguardando Firebase carregar...');
+  await new Promise(r => setTimeout(r, 2000));
+  console.log('[Init] Inicializando Firebase...');
+  try {
+    getFirebaseDb();
+    getFirebaseAuth();
+    console.log('[Init] Firebase pronto!');
+  } catch(e) {
+    console.error('[Init] Erro ao inicializar Firebase:', e.message);
+  }
   render();
   await loadAll();
   let savedId = null;
