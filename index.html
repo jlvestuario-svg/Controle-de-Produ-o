@@ -278,54 +278,26 @@ if(typeof window.storage === 'undefined' || !window.storage){
   };
 }
 
+async function hashPassword(password){
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
 async function firebaseSignUpUser(username, password){
-  let auth;
-  try {
-    auth = getFirebaseAuth();
-    if(!auth || !auth.createUserWithEmailAndPassword) {
-      throw new Error('Firebase Auth não está disponível');
-    }
-  } catch(e) {
-    console.error('[Firebase] Erro ao obter auth:', e.message);
-    throw e;
-  }
-  const email = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@controle.local`;
-  try{
-    const cred = await auth.createUserWithEmailAndPassword(email, password);
-    return {success: true, uid: cred.user.uid, email};
-  }catch(err){
-    console.error('[Firebase] Erro ao criar usuário:', err.code, err.message);
-    if(err.code === 'auth/email-already-in-use'){
-      try{
-        const cred = await auth.signInWithEmailAndPassword(email, password);
-        return {success: true, uid: cred.user.uid, email};
-      }catch{
-        return {success: false, error: 'Email ou senha incorretos'};
-      }
-    }
-    return {success: false, error: err.message};
-  }
+  const hashed = await hashPassword(password);
+  return {success: true, uid: hashed, email: username};
 }
 
 async function firebaseSignInUser(username, password){
-  const auth = getFirebaseAuth();
-  const email = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@controle.local`;
-  try{
-    const cred = await auth.signInWithEmailAndPassword(email, password);
-    return {success: true, uid: cred.user.uid, email};
-  }catch(err){
-    return {success: false, error: 'Email ou senha incorretos'};
-  }
+  const hashed = await hashPassword(password);
+  return {success: true, uid: hashed, email: username};
 }
 
 async function firebaseSignOut(){
-  const auth = getFirebaseAuth();
-  try{
-    await auth.signOut();
-    return {success: true};
-  }catch(err){
-    return {success: false, error: err.message};
-  }
+  return {success: true};
 }
 
 function getCurrentFirebaseUser(){
@@ -863,10 +835,6 @@ function renderAuthScreen(){
       const senha = document.getElementById('setupSenha').value;
       if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
       try{
-        if(typeof firebase === 'undefined') throw new Error('Firebase SDK ainda não carregou');
-        console.log('[Setup] Aguardando Firebase estar pronto...');
-        await new Promise(r => setTimeout(r, 1500));
-        console.log('[Setup] Tentando criar usuário...');
         const authResult = await firebaseSignUpUser(nome, senha);
         if(!authResult.success){ showToast(authResult.error); return; }
         const u = {id:uid(), nome, papel:'admin', firebaseUid: authResult.uid};
@@ -874,7 +842,6 @@ function renderAuthScreen(){
         await saveUsuarios();
         loginAs(u);
       }catch(e){
-        console.error('[Setup] Erro:', e.message);
         showToast('Erro ao criar usuário: ' + e.message);
       }
     };
@@ -892,8 +859,6 @@ function renderAuthScreen(){
       const senha = document.getElementById('loginSenha').value;
       if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
       try{
-        if(typeof firebase === 'undefined') throw new Error('Firebase SDK ainda não carregou');
-        await new Promise(r => setTimeout(r, 500));
         const cand = usuarios.find(x=>x.nome.toLowerCase()===nome.toLowerCase());
         if(!cand){ showToast('Usuário ou senha incorretos'); return; }
         const authResult = await firebaseSignInUser(nome, senha);
@@ -3089,8 +3054,6 @@ function openUsuarioForm(){
     if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
     if(usuarios.some(u=>u.nome.toLowerCase()===nome.toLowerCase())){ showToast('Já existe um usuário com esse nome'); return; }
     try{
-      if(typeof firebase === 'undefined') throw new Error('Firebase SDK ainda não carregou');
-      await new Promise(r => setTimeout(r, 500));
       const authResult = await firebaseSignUpUser(nome, senha);
       if(!authResult.success){ showToast(authResult.error); return; }
       usuarios.push({id:uid(), nome, papel, firebaseUid: authResult.uid});
@@ -3238,16 +3201,6 @@ document.getElementById('fabBtn').onclick = openFormForTab;
 })();
 
 (async function init(){
-  console.log('[Init] Aguardando Firebase carregar...');
-  await new Promise(r => setTimeout(r, 2000));
-  console.log('[Init] Inicializando Firebase...');
-  try {
-    getFirebaseDb();
-    getFirebaseAuth();
-    console.log('[Init] Firebase pronto!');
-  } catch(e) {
-    console.error('[Init] Erro ao inicializar Firebase:', e.message);
-  }
   render();
   await loadAll();
   let savedId = null;
