@@ -405,7 +405,18 @@ async function firebaseSignInUser(username, password){
     return {success: true, uid: cred.user.uid, email};
   }catch(err){
     console.warn('[Firebase] Sign in falhou, tentando modo offline:', err.message);
-    return localSignInUser(username, password);
+    const localResult = await localSignInUser(username, password);
+    if(localResult.success){
+      // senha confere localmente — aproveita pra criar a conta real agora, silenciosamente,
+      // sem exigir nenhuma ação extra da pessoa (migração gradual e segura)
+      try{
+        await auth.createUserWithEmailAndPassword(email, password);
+        console.log('[Firebase] Conta real criada na migração silenciosa para', username);
+      }catch(createErr){
+        console.warn('[Firebase] Não foi possível migrar a conta real agora:', createErr.message);
+      }
+    }
+    return localResult;
   }
 }
 
