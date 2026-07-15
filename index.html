@@ -363,27 +363,31 @@ async function localSignInUser(username, password){
 
 async function firebaseSignUpUser(username, password){
   await waitForFirebase();
+  const hash = await hashPassword(password);
 
   if(!firebaseAvailable){
-    return localSignUpUser(username, password);
+    const r = await localSignUpUser(username, password);
+    return {...r, localHash: hash};
   }
 
   const auth = firebase.auth();
   const email = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@jlvestuario.app`;
   try{
     const cred = await auth.createUserWithEmailAndPassword(email, password);
-    return {success: true, uid: cred.user.uid, email};
+    return {success: true, uid: cred.user.uid, email, localHash: hash};
   }catch(err){
     if(err.code === 'auth/email-already-in-use'){
       try{
         const cred = await auth.signInWithEmailAndPassword(email, password);
-        return {success: true, uid: cred.user.uid, email};
+        return {success: true, uid: cred.user.uid, email, localHash: hash};
       }catch{
-        return localSignUpUser(username, password);
+        const r = await localSignUpUser(username, password);
+        return {...r, localHash: hash};
       }
     }
     console.warn('[Firebase] Sign up falhou, usando modo offline:', err.message);
-    return localSignUpUser(username, password);
+    const r = await localSignUpUser(username, password);
+    return {...r, localHash: hash};
   }
 }
 
@@ -3509,7 +3513,7 @@ function openUsuarioForm(){
     try{
       const authResult = await firebaseSignUpUser(nome, senha);
       if(!authResult.success){ showToast(authResult.error); return; }
-      usuarios.push({id:uid(), nome, papel, firebaseUid: authResult.uid});
+      usuarios.push({id:uid(), nome, papel, firebaseUid: authResult.uid, hash: authResult.localHash});
       await saveUsuarios(); closeModal(); render(); showToast('Usuário criado');
     }catch(e){
       showToast('Erro ao criar usuário: ' + e.message);
@@ -3541,6 +3545,8 @@ function openEditarUsuarioForm(uId){
       try{
         const authResult = await firebaseSignUpUser(nome, senha);
         if(!authResult.success){ showToast('Erro ao atualizar senha: ' + authResult.error); return; }
+        u.hash = authResult.localHash;
+        u.firebaseUid = authResult.uid || u.firebaseUid;
       }catch(e){
         showToast('Erro ao atualizar senha: ' + e.message); return;
       }
