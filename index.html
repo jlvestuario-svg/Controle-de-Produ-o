@@ -3670,60 +3670,6 @@ document.getElementById('fabBtn').onclick = openFormForTab;
   document.head.appendChild(link);
 })();
 
-// Reset de Emergência - limpa tudo e permite criar novo admin
-window.resetEmergency = function(){
-  console.log('🚨 RESET EMERGENCIAL: Limpando tudo...');
-  try{ localStorage.clear(); }catch(e){}
-  try{ sessionStorage.clear(); }catch(e){}
-  producao = [];
-  perdas = [];
-  config = [];
-  fornecedores = [];
-  insumosExtras = [];
-  usuarios = [];
-  recorrentes = [];
-  financeiro = [];
-  contasPagar = [];
-  contasAprendizado = [];
-  currentUser = null;
-  dataReady = true;
-  console.log('✅ Reset completo. Recarregando...');
-  setTimeout(() => location.reload(), 500);
-};
-
-// Deleta usuário específico e sincroniza com Firebase
-window.deleteUser = async function(nomeUsuario){
-  console.log('🗑️ Deletando usuário:', nomeUsuario);
-  try{
-    const idx = usuarios.findIndex(u => u.nome.toLowerCase() === nomeUsuario.toLowerCase());
-    if(idx === -1){
-      console.log('Usuário não encontrado');
-      alert('Usuário não encontrado');
-      return;
-    }
-    usuarios.splice(idx, 1);
-    await saveUsuarios();
-    console.log('✅ Usuário deletado');
-    alert('✅ Usuário ' + nomeUsuario + ' foi deletado com sucesso');
-    localStorage.clear();
-    setTimeout(() => location.reload(), 1000);
-  }catch(e){
-    console.error('Erro ao deletar:', e);
-    alert('Erro: ' + e.message);
-  }
-};
-
-// Verifica URL para operações especiais
-const urlParams = new URLSearchParams(window.location.search);
-if(urlParams.get('reset') === 'true'){
-  window.resetEmergency();
-}
-if(urlParams.get('deleteUser')){
-  const userName = urlParams.get('deleteUser');
-  console.log('Deletando usuário via URL:', userName);
-  setTimeout(() => window.deleteUser(userName), 1000);
-}
-
 (async function init(){
   render();
   await loadAll();
