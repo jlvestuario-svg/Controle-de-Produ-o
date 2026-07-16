@@ -3647,13 +3647,22 @@ function openEditarLoteForm(loteId){
     </div>` : ''}
     ${p.status==='revisado' ? `<div class="field"><label>Peças aproveitáveis</label><input id="f_editAprov" type="number" min="0" value="${p.quantidadeAproveitavel}"></div>` : ''}
     ${mostrarInsumos ? `
-    <div class="field"><label>Ilhós / Atacador enviados junto</label></div>
+    <div class="field"><label>${p.status==='enviado' ? 'Enviar mais Ilhós/Atacador agora' : 'Ilhós / Atacador enviados (total)'}</label></div>
     <div class="card" style="padding:10px 12px; margin-bottom:12px;">
-      ${insumosRelevantes.map(i=>`
-        <div class="fin-row" style="padding:5px 0;">
+      ${insumosRelevantes.map(i=>{
+        const atual = (p.insumosEnviados&&p.insumosEnviados[i.id])||0;
+        if(p.status==='enviado'){
+          return `<div class="fin-row" style="padding:5px 0;">
+            <div class="fin-label">${escapeHtml(i.nome)}${atual>0?` <span style="color:var(--text-dim);">(já enviou ${atual})</span>`:''}</div>
+            <div class="fin-vals"><input class="f_editInsumoAdd" data-insumo-id="${i.id}" type="number" min="0" step="1" placeholder="+ agora" style="width:80px; text-align:right; background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px;"></div>
+          </div>`;
+        }
+        return `<div class="fin-row" style="padding:5px 0;">
           <div class="fin-label">${escapeHtml(i.nome)}</div>
-          <div class="fin-vals"><input class="f_editInsumoEnv" data-insumo-id="${i.id}" type="number" min="0" step="1" value="${(p.insumosEnviados&&p.insumosEnviados[i.id])||''}" placeholder="0" style="width:70px; text-align:right; background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px;"></div>
-        </div>`).join('')}
+          <div class="fin-vals"><input class="f_editInsumoEnv" data-insumo-id="${i.id}" type="number" min="0" step="1" value="${atual||''}" placeholder="0" style="width:70px; text-align:right; background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px;"></div>
+        </div>`;
+      }).join('')}
+      ${p.status==='enviado' ? `<div class="field hint" style="margin:6px 0 0;">Só preenche se for mandar mais agora — o que já foi enviado antes continua contando, é só somar em cima.</div>` : ''}
     </div>` : ''}
     <div class="field hint">Editar quantidade ou valor recalcula automaticamente os totais e créditos deste lote.</div>
     <div class="modal-actions">
@@ -3678,11 +3687,22 @@ function openEditarLoteForm(loteId){
       p.valorCredito = naoAprov * p.valorUnit;
     }
     if(mostrarInsumos){
-      p.insumosEnviados = {};
-      document.querySelectorAll('.f_editInsumoEnv').forEach(inp=>{
-        const qtd = Number(inp.value)||0;
-        if(qtd>0) p.insumosEnviados[inp.dataset.insumoId] = qtd;
-      });
+      if(p.status==='enviado'){
+        if(!p.insumosEnviados) p.insumosEnviados = {};
+        document.querySelectorAll('.f_editInsumoAdd').forEach(inp=>{
+          const add = Number(inp.value)||0;
+          if(add>0){
+            const id = inp.dataset.insumoId;
+            p.insumosEnviados[id] = (p.insumosEnviados[id]||0) + add;
+          }
+        });
+      }else{
+        p.insumosEnviados = {};
+        document.querySelectorAll('.f_editInsumoEnv').forEach(inp=>{
+          const qtd = Number(inp.value)||0;
+          if(qtd>0) p.insumosEnviados[inp.dataset.insumoId] = qtd;
+        });
+      }
     }
     await saveProducao(); closeModal(); render(); showToast('Lote atualizado');
   };
