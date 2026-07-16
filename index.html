@@ -1284,10 +1284,13 @@ function renderProducao(){
     const finalizados = g.filter(p=>p.status!=='enviado').sort((a,b)=> (a.dataRetorno||'').localeCompare(b.dataRetorno||''));
     const statusGeral = pendente ? 'enviado' : (finalizados.length>0 && finalizados.every(p=>p.status==='revisado') ? 'revisado' : 'retornado');
 
+    const loteOrigem = !isCorte && head.loteCorteOrigemId ? producao.find(x=>x.id===head.loteCorteOrigemId) : null;
+    const corCostura = loteOrigem ? loteOrigem.cor : null;
+
     html += `<div class="item">
       <div class="item-top">
         <div>
-          <div class="item-title">${escapeHtml(head.produto)}${isCorte?(' · '+escapeHtml(head.cor||'-')):''}</div>
+          <div class="item-title">${escapeHtml(head.produto)}${isCorte?(' · '+escapeHtml(head.cor||'-')):(corCostura?(' · '+escapeHtml(corCostura)):'')}</div>
           <div class="item-sub">${escapeHtml(head.funcionario)} · enviado ${fmtDateBR(head.dataEnvio)}${isCorte&&head.pesoBobinas?(' · '+head.pesoBobinas+' kg'):''}</div>
         </div>
         <div class="item-right">
