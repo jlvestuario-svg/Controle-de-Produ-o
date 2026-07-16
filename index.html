@@ -1331,6 +1331,22 @@ function renderProducao(){
           const jaRetirado = finalizados.reduce((s,f)=>s+Number(f.quantidadeRetornada||0),0);
           html += `<div class="item-note" style="color:var(--retornado)">${jaRetirado} peça(s) já retirada(s) em ${finalizados.length} coleta(s) anterior(es)</div>`;
         }
+      }
+      if(head.insumosEnviados && Object.keys(head.insumosEnviados).length>0){
+        const pecasRetornadas = finalizados.reduce((s,f)=>s+Number(f.quantidadeRetornada||0),0);
+        Object.entries(head.insumosEnviados).forEach(([insumoId, qtdEnviada])=>{
+          const insumo = insumosExtras.find(i=>i.id===insumoId);
+          if(!insumo) return;
+          const esperado = pecasRetornadas * Number(insumo.quantidadePorPeca||0);
+          const saldo = Number(qtdEnviada) - esperado;
+          const cor = saldo < 0 ? 'var(--perda)' : 'var(--text-dim)';
+          const texto = saldo < 0
+            ? `faltou ${Math.abs(Math.round(saldo))} (usou mais do que foi enviado)`
+            : `sobra estimada ${Math.round(saldo)}`;
+          html += `<div class="item-note" style="color:${cor}">${escapeHtml(insumo.nome)}: enviou ${qtdEnviada} · ${pecasRetornadas} peça(s) voltaram (usariam ~${Math.round(esperado)}) · ${texto}</div>`;
+        });
+      }
+      if(pendente){
         html += `<div class="item-actions">
           <button class="btn btn-primary" data-action="registrarRetorno" data-id="${pendente.id}">Registrar retorno</button>
           <button class="btn" data-action="editarLote" data-id="${pendente.id}">Editar</button>
@@ -2742,12 +2758,23 @@ function openProducaoForm(){
       };
     }else{
       const lotesCorteDisponiveis = producao.filter(x=>x.etapa==='corte' && x.status!=='enviado').sort((a,b)=>b.dataRetorno.localeCompare(a.dataRetorno));
+      const insumosRelevantes = insumosExtras.filter(i=>i.tipo==='Ilhós'||i.tipo==='Atacador');
       campoEtapaEnvio.innerHTML = tamanhoInputsHtml('f_tamEnv') + `
         <div class="field"><label>Lote de corte de origem (opcional)</label><select id="f_loteCorteOrigem">
           <option value="">Não sei / não informar</option>
           ${lotesCorteDisponiveis.map(x=>`<option value="${x.id}">${escapeHtml(x.produto)} · ${escapeHtml(x.cor||'-')} · ${fmtDateBR(x.dataRetorno)}${x.numeroLoteFornecedor?(' · pedido '+escapeHtml(x.numeroLoteFornecedor)):''}</option>`).join('')}
         </select></div>
-        <div class="field hint">Ligar ao lote de corte deixa o custo de matéria-prima exato desse lote (em vez de uma média) para calcular perdas depois.</div>`;
+        <div class="field hint">Ligar ao lote de corte deixa o custo de matéria-prima exato desse lote (em vez de uma média) para calcular perdas depois.</div>
+        ${insumosRelevantes.length>0 ? `
+        <div class="field"><label>Ilhós / Atacador enviados junto (opcional)</label></div>
+        <div class="card" style="padding:10px 12px; margin-bottom:12px;">
+          ${insumosRelevantes.map(i=>`
+            <div class="fin-row" style="padding:5px 0;">
+              <div class="fin-label">${escapeHtml(i.nome)}</div>
+              <div class="fin-vals"><input class="f_insumoEnv" data-insumo-id="${i.id}" type="number" min="0" step="1" placeholder="0" style="width:70px; text-align:right; background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px;"></div>
+            </div>`).join('')}
+          <div class="field hint" style="margin:6px 0 0;">Isso deixa registrado quanto foi enviado, pra comparar depois com o que as peças que voltaram deveriam ter usado.</div>
+        </div>` : ''}`;
       const recalc = ()=>{
         let total = 0;
         TAMS.forEach(t=>{ total += Number(campoEtapaEnvio.querySelector('.f_tamEnv'+t).value)||0; });
@@ -2834,6 +2861,11 @@ function openProducaoForm(){
         novoLote.custoLaborCorteHerdado = null;
         novoLote.proporcaoTecidoHerdada = null;
       }
+      novoLote.insumosEnviados = {};
+      campoEtapaEnvio.querySelectorAll('.f_insumoEnv').forEach(inp=>{
+        const qtd = Number(inp.value)||0;
+        if(qtd>0) novoLote.insumosEnviados[inp.dataset.insumoId] = qtd;
+      });
     }
     producao.push(novoLote);
     await saveProducao(); closeModal(); render(); showToast('Envio registrado');
@@ -3601,6 +3633,8 @@ function openEditarPerdaForm(perdaId){
 
 function openEditarLoteForm(loteId){
   const p = producao.find(x=>x.id===loteId);
+  const insumosRelevantes = insumosExtras.filter(i=>i.tipo==='Ilhós'||i.tipo==='Atacador');
+  const mostrarInsumos = p.etapa==='costura' && insumosRelevantes.length>0;
   openModal(`
     <h3>Editar lote — ${escapeHtml(p.produto)}</h3>
     <div class="field"><label>Produto</label><input id="f_editProd" value="${escapeHtml(p.produto)}"></div>
@@ -3612,6 +3646,15 @@ function openEditarLoteForm(loteId){
       <div class="field"><label>Data do retorno</label><input id="f_editDataRet" type="date" value="${p.dataRetorno||''}"></div>
     </div>` : ''}
     ${p.status==='revisado' ? `<div class="field"><label>Peças aproveitáveis</label><input id="f_editAprov" type="number" min="0" value="${p.quantidadeAproveitavel}"></div>` : ''}
+    ${mostrarInsumos ? `
+    <div class="field"><label>Ilhós / Atacador enviados junto</label></div>
+    <div class="card" style="padding:10px 12px; margin-bottom:12px;">
+      ${insumosRelevantes.map(i=>`
+        <div class="fin-row" style="padding:5px 0;">
+          <div class="fin-label">${escapeHtml(i.nome)}</div>
+          <div class="fin-vals"><input class="f_editInsumoEnv" data-insumo-id="${i.id}" type="number" min="0" step="1" value="${(p.insumosEnviados&&p.insumosEnviados[i.id])||''}" placeholder="0" style="width:70px; text-align:right; background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px;"></div>
+        </div>`).join('')}
+    </div>` : ''}
     <div class="field hint">Editar quantidade ou valor recalcula automaticamente os totais e créditos deste lote.</div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancelar</button>
@@ -3633,6 +3676,13 @@ function openEditarLoteForm(loteId){
       p.quantidadeAproveitavel = aprov;
       p.quantidadeNaoAproveitavel = naoAprov;
       p.valorCredito = naoAprov * p.valorUnit;
+    }
+    if(mostrarInsumos){
+      p.insumosEnviados = {};
+      document.querySelectorAll('.f_editInsumoEnv').forEach(inp=>{
+        const qtd = Number(inp.value)||0;
+        if(qtd>0) p.insumosEnviados[inp.dataset.insumoId] = qtd;
+      });
     }
     await saveProducao(); closeModal(); render(); showToast('Lote atualizado');
   };
