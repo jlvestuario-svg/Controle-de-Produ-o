@@ -1336,14 +1336,18 @@ function renderProducao(){
     }else{
       // costura: mostra o que ainda falta retirar (se houver) e o histórico de retiradas já feitas deste envio
       const tamsHead = tamsDoLote(head);
+      const totalEnviadoOriginal = Number(head.quantidadeEnviadaOriginal || head.quantidadeEnviada || 0);
+      const totalRetornadoGrupo = finalizados.reduce((s,f)=>s+Number(f.quantidadeRetornada||0),0);
+      const totalPendenteGrupo = pendente ? Number(pendente.quantidadeEnviada||0) : 0;
+      html += `<div class="item-note" style="display:flex; gap:16px; font-weight:600; color:var(--text); flex-wrap:wrap;">
+        <span>Enviado: ${totalEnviadoOriginal}</span>
+        <span style="color:var(--retornado)">Retornado: ${totalRetornadoGrupo}</span>
+        <span style="color:${totalPendenteGrupo>0?'var(--corte)':'var(--revisao)'}">Pendente: ${totalPendenteGrupo}</span>
+      </div>`;
       if(pendente){
         const te = pendente.tamanhosEnviados||{};
         const aguardandoStr = tamsHead.map(t=>t+' '+(te[t]||0)).join(' · ');
         html += `<div class="item-note">Aguardando retirada: ${aguardandoStr}</div>`;
-        if(finalizados.length>0){
-          const jaRetirado = finalizados.reduce((s,f)=>s+Number(f.quantidadeRetornada||0),0);
-          html += `<div class="item-note" style="color:var(--retornado)">${jaRetirado} peça(s) já retirada(s) em ${finalizados.length} coleta(s) anterior(es)</div>`;
-        }
       }
       if(head.insumosEnviados && Object.keys(head.insumosEnviados).length>0){
         const pecasRetornadas = finalizados.reduce((s,f)=>s+Number(f.quantidadeRetornada||0),0);
@@ -1356,7 +1360,7 @@ function renderProducao(){
           const texto = saldo < 0
             ? `faltou ${Math.abs(Math.round(saldo))} (usou mais do que foi enviado)`
             : `sobra estimada ${Math.round(saldo)}`;
-          html += `<div class="item-note" style="color:${cor}">${escapeHtml(insumo.nome)}: enviou ${qtdEnviada} · ${pecasRetornadas} peça(s) voltaram (usariam ~${Math.round(esperado)}) · ${texto}</div>`;
+          html += `<div class="item-note" style="color:${cor}">📦 ${escapeHtml(insumo.nome)}: enviou ${qtdEnviada} · usariam ~${Math.round(esperado)} · ${texto}</div>`;
         });
       }
       if(pendente){
@@ -1370,9 +1374,14 @@ function renderProducao(){
         const tr = f.tamanhosRetornados||{};
         const tamsF = tamsDoLote(f);
         const tamStr = tamsF.filter(t=>Number(tr[t])>0).map(t=>t+' '+tr[t]).join(' · ');
+        const pagoTag = f.paga ? `<span class="tag tag-revisado">Pago</span>` : `<span class="tag tag-enviado">A pagar</span>`;
+        const revisadoTag = f.status==='revisado' ? `<span class="tag tag-revisado">Revisado</span>` : `<span class="tag tag-retornado">Aguard. revisão</span>`;
         html += `<div class="subitem">
-          <div class="subitem-label">Retirada de ${fmtDateBR(f.dataRetorno)}</div>
-          <div class="subitem-row">${f.quantidadeRetornada||0} peça(s)${tamStr?(' · '+tamStr):''} · ${fmtMoney(f.valorTotal)} · ${f.paga?('pago em '+fmtDateBR(f.dataPagamento)):'pendente'}</div>
+          <div class="subitem-label" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
+            <span>Retirada de ${fmtDateBR(f.dataRetorno)}</span>
+            <span>${pagoTag} ${revisadoTag}</span>
+          </div>
+          <div class="subitem-row">${f.quantidadeRetornada||0} peça(s)${tamStr?(' · '+tamStr):''} · ${fmtMoney(f.valorTotal)}${f.paga?(' · pago em '+fmtDateBR(f.dataPagamento)):''}</div>
           ${Number(f.pesoNaoCosturado)>0?`<div class="subitem-row" style="color:var(--perda)">Peso sem aproveitamento: ${f.pesoNaoCosturado} kg</div>`:''}
           ${f.status==='revisado' && Number(f.quantidadeNaoAproveitavel)>0?`<div class="subitem-row" style="color:var(--perda)">${f.quantidadeNaoAproveitavel} peça(s) sem aproveitamento · crédito de ${fmtMoney(f.valorCredito)} · ${f.creditoAplicado?'já abatido':'ainda não abatido'}</div>`:''}
           <div class="subitem-actions">
@@ -1439,18 +1448,22 @@ function renderRevisao(){
   return html;
 }
 
+let pagamentosView = 'pendentes';
+let pagamentosExpandido = new Set();
+let extratoFuncSelecionado = '';
 function renderPagamentos(){
   const byFunc = {};
   producao.forEach(p=>{
     if(p.status==='enviado') return;
     const f = p.funcionario || 'Sem nome';
-    if(!byFunc[f]) byFunc[f] = {pendente:0, pago:0, credito:0, pecasNaoAproveitadas:0};
+    if(!byFunc[f]) byFunc[f] = {pendente:0, pago:0, credito:0, pecasNaoAproveitadas:0, lotes:[]};
     if(p.paga) byFunc[f].pago += Number(p.valorTotal||0);
     else byFunc[f].pendente += Number(p.valorTotal||0);
     if(p.status==='revisado' && !p.creditoAplicado){
       byFunc[f].credito += Number(p.valorCredito||0);
       byFunc[f].pecasNaoAproveitadas += Number(p.quantidadeNaoAproveitavel||0);
     }
+    byFunc[f].lotes.push(p);
   });
   const names = Object.keys(byFunc).sort((a,b)=>byFunc[b].pendente-byFunc[a].pendente);
   const totalPendente = names.reduce((s,n)=>s+byFunc[n].pendente,0);
@@ -1461,24 +1474,73 @@ function renderPagamentos(){
     <div class="metric"><div class="label">Valor em haver</div><div class="value" style="color:var(--perda)">${fmtMoney(totalCredito)}</div></div>
   </div>`;
 
+  html += `<div class="filter-row">
+    <button class="btn-toggle ${pagamentosView==='pendentes'?'active':''}" id="btnPagPendentes">Pendentes</button>
+    <button class="btn-toggle ${pagamentosView==='extrato'?'active':''}" id="btnPagExtrato">Extrato</button>
+  </div>`;
+
   if(names.length===0){
     html += `<div class="empty">Nenhum lote retornado ainda.</div>`;
     return html;
   }
-  html += `<div class="card">`;
-  names.forEach(n=>{
-    const b = byFunc[n];
-    const liquido = b.pendente - b.credito;
-    html += `<div class="item">
-      <div class="item-top">
-        <div><div class="item-title">${escapeHtml(n)}</div><div class="item-sub">Já pago: ${fmtMoney(b.pago)}</div></div>
-        <div class="item-right" style="color:var(--money)">${fmtMoney(b.pendente)}</div>
-      </div>
-      ${b.credito>0 ? `<div class="item-note" style="color:var(--perda)">Valor em haver: ${fmtMoney(b.credito)} (${b.pecasNaoAproveitadas} peça(s) sem aproveitamento) · líquido a pagar: ${fmtMoney(liquido)}</div>` : ''}
-      ${b.pendente>0 ? `<div class="item-actions"><button class="btn btn-primary" data-action="abrirPagamento" data-func="${encodeURIComponent(n)}">Marcar como pago</button></div>` : ''}
-    </div>`;
-  });
-  html += `</div>`;
+
+  if(pagamentosView==='pendentes'){
+    html += `<div class="card">`;
+    names.forEach(n=>{
+      const b = byFunc[n];
+      const liquido = b.pendente - b.credito;
+      const expandido = pagamentosExpandido.has(n);
+      html += `<div class="item">
+        <div class="item-top">
+          <div><div class="item-title">${escapeHtml(n)}</div><div class="item-sub">Já pago: ${fmtMoney(b.pago)}</div></div>
+          <div class="item-right" style="color:var(--money)">${fmtMoney(b.pendente)}</div>
+        </div>
+        ${b.credito>0 ? `<div class="item-note" style="color:var(--perda)">Valor em haver: ${fmtMoney(b.credito)} (${b.pecasNaoAproveitadas} peça(s) sem aproveitamento) · líquido a pagar: ${fmtMoney(liquido)}</div>` : ''}
+        <div class="item-actions">
+          ${b.pendente>0 ? `<button class="btn" data-action="verDetalhesPag" data-func="${encodeURIComponent(n)}">${expandido?'Ocultar':'Ver'} detalhes (${b.lotes.filter(p=>!p.paga).length})</button>` : ''}
+          ${b.pendente>0 ? `<button class="btn btn-primary" data-action="abrirPagamento" data-func="${encodeURIComponent(n)}">Marcar como pago</button>` : ''}
+        </div>`;
+      if(expandido){
+        const naoPagos = [...b.lotes].filter(p=>!p.paga).sort((a,c)=> (a.dataRetorno||'').localeCompare(c.dataRetorno||''));
+        naoPagos.forEach(p=>{
+          const revisadoTag = p.status==='revisado' ? `<span class="tag tag-revisado">Revisado</span>` : `<span class="tag tag-retornado">Aguard. revisão</span>`;
+          html += `<div class="subitem">
+            <div class="subitem-label" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
+              <span>${fmtDateBR(p.dataRetorno)}</span>
+              <span>${revisadoTag}</span>
+            </div>
+            <div class="subitem-row">${escapeHtml(p.produto)} · ${p.quantidadeRetornada} peça(s) · ${fmtMoney(p.valorTotal)}</div>
+            ${p.status==='revisado' && Number(p.quantidadeNaoAproveitavel)>0 ? `<div class="subitem-row" style="color:var(--perda)">${p.quantidadeNaoAproveitavel} sem aproveitamento · crédito ${fmtMoney(p.valorCredito)}${p.creditoAplicado?' (já abatido)':''}</div>` : ''}
+          </div>`;
+        });
+      }
+      html += `</div>`;
+    });
+    html += `</div>`;
+  }else{
+    html += `<div class="field"><select id="selExtratoFunc">
+      <option value="">Selecione a costureira...</option>
+      ${names.map(n=>`<option value="${escapeHtml(n)}" ${extratoFuncSelecionado===n?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+    </select></div>`;
+    if(extratoFuncSelecionado && byFunc[extratoFuncSelecionado]){
+      const todos = [...byFunc[extratoFuncSelecionado].lotes].sort((a,c)=> (c.dataRetorno||'').localeCompare(a.dataRetorno||''));
+      html += `<div class="section-title">${todos.length} lançamento(s)</div>`;
+      html += `<div class="card">`;
+      todos.forEach(p=>{
+        const pagoTag = p.paga ? `<span class="tag tag-revisado">Pago</span>` : `<span class="tag tag-enviado">Pendente</span>`;
+        html += `<div class="item">
+          <div class="item-top">
+            <div><div class="item-title">${escapeHtml(p.produto)}</div><div class="item-sub">${fmtDateBR(p.dataRetorno)} · ${p.quantidadeRetornada||0} peça(s)</div></div>
+            <div class="item-right">${pagoTag}<br>${fmtMoney(p.valorTotal)}</div>
+          </div>
+          ${p.paga ? `<div class="item-note">Pago em ${fmtDateBR(p.dataPagamento)}</div>` : ''}
+        </div>`;
+      });
+      html += `</div>`;
+    }else{
+      html += `<div class="empty">Escolha uma costureira pra ver o extrato completo (tudo que já foi pago e o que ainda falta).</div>`;
+    }
+  }
   return html;
 }
 
@@ -2541,6 +2603,11 @@ function attachDynamicHandlers(){
         await savePerdas(); render(); showToast('Perda excluída');
       }else if(action==='abrirPagamento'){
         openPagamentoForm(decodeURIComponent(el.dataset.func));
+      }else if(action==='verDetalhesPag'){
+        const nome = decodeURIComponent(el.dataset.func);
+        if(pagamentosExpandido.has(nome)) pagamentosExpandido.delete(nome);
+        else pagamentosExpandido.add(nome);
+        render();
       }else if(action==='delFunc'){
         config = config.filter(c=>c.id!==id);
         await saveConfig(); render(); showToast('Removido');
@@ -2643,6 +2710,12 @@ function attachDynamicHandlers(){
   if(cpFiltroMes) cpFiltroMes.onchange = ()=>{ contasFiltroMes = cpFiltroMes.value; render(); };
   const btnLimpar = document.getElementById('btnLimparFiltrosContas');
   if(btnLimpar) btnLimpar.onclick = ()=>{ contasBusca=''; contasFiltroCategoria=''; contasFiltroMes=''; render(); };
+  const btnPagPendentes = document.getElementById('btnPagPendentes');
+  const btnPagExtrato = document.getElementById('btnPagExtrato');
+  if(btnPagPendentes) btnPagPendentes.onclick = ()=>{ pagamentosView='pendentes'; render(); };
+  if(btnPagExtrato) btnPagExtrato.onclick = ()=>{ pagamentosView='extrato'; render(); };
+  const selExtratoFunc = document.getElementById('selExtratoFunc');
+  if(selExtratoFunc) selExtratoFunc.onchange = ()=>{ extratoFuncSelecionado = selExtratoFunc.value; render(); };
 }
 
 function buildResumoMensal(){
@@ -3404,8 +3477,13 @@ function openPagamentoForm(funcNome){
   const pendente = lotes.reduce((s,p)=>s+Number(p.valorTotal||0),0);
   const creditos = producao.filter(p=>p.status==='revisado' && (p.funcionario||'Sem nome')===funcNome && !p.creditoAplicado);
   const credito = creditos.reduce((s,p)=>s+Number(p.valorCredito||0),0);
+  const lotesOrdenados = [...lotes].sort((a,b)=>(a.dataRetorno||'').localeCompare(b.dataRetorno||''));
   openModal(`
     <h3>Pagamento — ${escapeHtml(funcNome)}</h3>
+    <div class="field"><label>Este pagamento inclui (${lotesOrdenados.length} lançamento(s))</label></div>
+    <div class="card" style="padding:8px 12px; max-height:220px; overflow-y:auto;">
+      ${lotesOrdenados.map(p=>`<div class="rate-row"><span>${fmtDateBR(p.dataRetorno)} · ${escapeHtml(p.produto)} · ${p.quantidadeRetornada} pç</span><span>${fmtMoney(p.valorTotal)}</span></div>`).join('')}
+    </div>
     <div class="field hint">Pendente: ${fmtMoney(pendente)}</div>
     ${credito>0 ? `
     <div class="checkfield">
