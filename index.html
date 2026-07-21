@@ -443,7 +443,12 @@ function getCurrentFirebaseUser(){
 const STAGE_LABEL = {corte:'Corte', costura:'Costura', revisao:'Revisão'};
 const STAGES = ['corte','costura','revisao'];
 const STATUS_LABEL = {enviado:'Enviado', retornado:'Retornado', revisado:'Revisado'};
-const TAMS = ['P','M','G','GG'];
+const TAMS_ADULTO = ['P','M','G','GG'];
+const TAMS_INFANTIL = ['2','4','6','8','10','12','14','16'];
+const TAMS = TAMS_ADULTO;
+function tamsDoLote(lote){
+  return (lote && lote.sistemaTamanho==='infantil') ? TAMS_INFANTIL : TAMS_ADULTO;
+}
 const TIPOS_TECIDO = ['Meia Malha','Moletom','Moletinho'];
 
 let producao = [];
@@ -830,7 +835,7 @@ function fmtDateBR(iso){ if(!iso) return '-'; const [y,m,d]=iso.split('-'); retu
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function isSameMonth(iso, ref){ if(!iso) return false; return iso.slice(0,7) === ref.slice(0,7); }
-function somaTam(obj){ if(!obj) return 0; return TAMS.reduce((s,t)=>s+Number(obj[t]||0),0); }
+function somaTam(obj, tams){ if(!obj) return 0; return (tams||TAMS).reduce((s,t)=>s+Number(obj[t]||0),0); }
 
 function migrateLote(p){
   if(p.quantidadeAproveitavel===undefined){
@@ -840,6 +845,7 @@ function migrateLote(p){
     p.valorCredito = p.valorDesconto || 0;
     p.creditoAplicado = p.descontoAplicado!==undefined ? p.descontoAplicado : true;
   }
+  if(p.sistemaTamanho===undefined) p.sistemaTamanho = 'adulto';
   if(p.dataPagamento===undefined) p.dataPagamento = p.paga ? (p.dataRetorno||p.data||null) : null;
   if(p.status==='conferido') p.status = 'revisado';
   if(p.tamanhosPlanejados && !p.tamanhosSolicitados){
@@ -1302,14 +1308,16 @@ function renderProducao(){
     if(isCorte){
       // corte nunca é dividido em retiradas parciais: card único, igual antes
       const p = head;
+      const tamsP = tamsDoLote(p);
       if(p.tamanhosSolicitados){
         const ts = p.tamanhosSolicitados;
-        const pedidos = TAMS.filter(t=>ts[t]).join(', ');
+        const pedidos = tamsP.filter(t=>ts[t]).join(', ');
         html += `<div class="item-note">Tamanhos pedidos: ${pedidos||'-'}</div>`;
       }
       if(p.tamanhosCortados){
         const tc = p.tamanhosCortados;
-        html += `<div class="item-note">Rendeu: P ${tc.P||0} · M ${tc.M||0} · G ${tc.G||0} · GG ${tc.GG||0}${p.pesoBobinas?(' · '+(p.quantidadeRetornada/p.pesoBobinas).toFixed(1)+' pç/kg'):''}</div>`;
+        const rendeuStr = tamsP.map(t=>t+' '+(tc[t]||0)).join(' · ');
+        html += `<div class="item-note">Rendeu: ${rendeuStr}${p.pesoBobinas?(' · '+(p.quantidadeRetornada/p.pesoBobinas).toFixed(1)+' pç/kg'):''}</div>`;
         if(Number(p.metaRendimentoBobina)>0){
           const diff = p.diferencaRendimento!=null ? p.diferencaRendimento : (p.quantidadeRetornada-p.metaRendimentoBobina);
           const emoji = diff>0?'🟢':(diff<0?'🔴':'🟡');
@@ -1327,9 +1335,11 @@ function renderProducao(){
       html += `</div>`;
     }else{
       // costura: mostra o que ainda falta retirar (se houver) e o histórico de retiradas já feitas deste envio
+      const tamsHead = tamsDoLote(head);
       if(pendente){
         const te = pendente.tamanhosEnviados||{};
-        html += `<div class="item-note">Aguardando retirada: P ${te.P||0} · M ${te.M||0} · G ${te.G||0} · GG ${te.GG||0}</div>`;
+        const aguardandoStr = tamsHead.map(t=>t+' '+(te[t]||0)).join(' · ');
+        html += `<div class="item-note">Aguardando retirada: ${aguardandoStr}</div>`;
         if(finalizados.length>0){
           const jaRetirado = finalizados.reduce((s,f)=>s+Number(f.quantidadeRetornada||0),0);
           html += `<div class="item-note" style="color:var(--retornado)">${jaRetirado} peça(s) já retirada(s) em ${finalizados.length} coleta(s) anterior(es)</div>`;
@@ -1358,7 +1368,8 @@ function renderProducao(){
       }
       finalizados.forEach(f=>{
         const tr = f.tamanhosRetornados||{};
-        const tamStr = TAMS.filter(t=>Number(tr[t])>0).map(t=>t+' '+tr[t]).join(' · ');
+        const tamsF = tamsDoLote(f);
+        const tamStr = tamsF.filter(t=>Number(tr[t])>0).map(t=>t+' '+tr[t]).join(' · ');
         html += `<div class="subitem">
           <div class="subitem-label">Retirada de ${fmtDateBR(f.dataRetorno)}</div>
           <div class="subitem-row">${f.quantidadeRetornada||0} peça(s)${tamStr?(' · '+tamStr):''} · ${fmtMoney(f.valorTotal)} · ${f.paga?('pago em '+fmtDateBR(f.dataPagamento)):'pendente'}</div>
@@ -2769,6 +2780,10 @@ function openProducaoForm(){
     </div>
     <div class="field"><label>Produto</label><input id="f_prod" list="listaProd" placeholder="Ex: Moletom Canguru"></div>
     <datalist id="listaProd"></datalist>
+    <div class="field"><label>Tamanhos</label><select id="f_sistemaTam">
+      <option value="adulto">Adulto (P, M, G, GG)</option>
+      <option value="infantil">Infantil (2 ao 16)</option>
+    </select></div>
     <div id="campoEtapaEnvio"></div>
     <div class="field"><label>Valor unitário (R$)</label><input id="f_val" type="number" min="0" step="0.01" value="0"></div>
     <div class="field hint">O valor a pagar é calculado com base na quantidade que retornar pronta, não na quantidade enviada.</div>
@@ -2783,11 +2798,14 @@ function openProducaoForm(){
   const valInput = document.getElementById('f_val');
   const listaProd = document.getElementById('listaProd');
   const campoEtapaEnvio = document.getElementById('campoEtapaEnvio');
+  const sistemaTamSelect = document.getElementById('f_sistemaTam');
+  const tamsAtivos = () => sistemaTamSelect.value==='infantil' ? TAMS_INFANTIL : TAMS_ADULTO;
 
   function tamanhoInputsHtml(prefix){
+    const tams = tamsAtivos();
     return `<div class="field"><label>Quantidade enviada por tamanho</label></div>
-      <div class="row4">
-        ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="${prefix}${t}" type="number" min="0" value="0"></div>`).join('')}
+      <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr);">
+        ${tams.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="${prefix}${t}" type="number" min="0" value="0"></div>`).join('')}
       </div>
       <div class="field"><label>Total (soma automática)</label><input id="${prefix}total" type="text" value="0" disabled></div>`;
   }
@@ -2815,8 +2833,8 @@ function openProducaoForm(){
           <div class="field"><label>Meta de rendimento (peças/bobina)</label><input id="f_metaRendimento" type="number" min="0" step="1" placeholder="Ex: 180"></div>
         </div>
         <div class="field"><label>Tamanhos solicitados para o corte</label></div>
-        <div class="row4">
-          ${TAMS.map(t=>`<div class="tamcheck"><label style="margin:0; text-transform:none;">${t}</label><input type="checkbox" class="f_tamSolic" value="${t}"></div>`).join('')}
+        <div class="row4" style="grid-template-columns:repeat(${Math.min(tamsAtivos().length,4)},1fr);">
+          ${tamsAtivos().map(t=>`<div class="tamcheck"><label style="margin:0; text-transform:none;">${t}</label><input type="checkbox" class="f_tamSolic" value="${t}"></div>`).join('')}
         </div>`;
       const fornSel = campoEtapaEnvio.querySelector('#f_fornecedor');
       fornSel.onchange = ()=>{
@@ -2845,10 +2863,10 @@ function openProducaoForm(){
         </div>` : ''}`;
       const recalc = ()=>{
         let total = 0;
-        TAMS.forEach(t=>{ total += Number(campoEtapaEnvio.querySelector('.f_tamEnv'+t).value)||0; });
+        tamsAtivos().forEach(t=>{ total += Number(campoEtapaEnvio.querySelector('.f_tamEnv'+t).value)||0; });
         campoEtapaEnvio.querySelector('#f_tamEnvtotal').value = total;
       };
-      TAMS.forEach(t=>{ campoEtapaEnvio.querySelector('.f_tamEnv'+t).oninput = recalc; });
+      tamsAtivos().forEach(t=>{ campoEtapaEnvio.querySelector('.f_tamEnv'+t).oninput = recalc; });
     }
   }
 
@@ -2870,6 +2888,7 @@ function openProducaoForm(){
   }
   funcSelect.onchange = ()=>{ refreshForFunc(); refreshValor(); };
   etapaSelect.onchange = refreshEtapaFields;
+  sistemaTamSelect.onchange = refreshEtapaFields;
   prodInput.onchange = refreshValor;
   refreshForFunc();
 
@@ -2884,7 +2903,7 @@ function openProducaoForm(){
     const novoLote = {id:uid(), dataEnvio, etapa, funcionario, produto, valorUnit,
       quantidadeEnviada:0, quantidadeRetornada:null, dataRetorno:null, valorTotal:0,
       quantidadeAproveitavel:null, quantidadeNaoAproveitavel:0, valorCredito:0, creditoAplicado:false,
-      paga:false, dataPagamento:null, status:'enviado'};
+      paga:false, dataPagamento:null, status:'enviado', sistemaTamanho: sistemaTamSelect.value};
     novoLote.envioGrupoId = novoLote.id;
     if(etapa==='corte'){
       novoLote.cor = document.getElementById('f_cor').value.trim();
@@ -2902,12 +2921,12 @@ function openProducaoForm(){
       novoLote.custoRibanaPorPeca = null;
       novoLote.custoMateriaPrimaPorPeca = null;
       novoLote.tamanhosSolicitados = {};
-      TAMS.forEach(t=>{ novoLote.tamanhosSolicitados[t] = false; });
+      tamsAtivos().forEach(t=>{ novoLote.tamanhosSolicitados[t] = false; });
       campoEtapaEnvio.querySelectorAll('.f_tamSolic').forEach(chk=>{ if(chk.checked) novoLote.tamanhosSolicitados[chk.value] = true; });
     }else{
       novoLote.tamanhosEnviados = {};
-      TAMS.forEach(t=>{ novoLote.tamanhosEnviados[t] = Number(campoEtapaEnvio.querySelector('.f_tamEnv'+t).value)||0; });
-      novoLote.quantidadeEnviada = somaTam(novoLote.tamanhosEnviados);
+      tamsAtivos().forEach(t=>{ novoLote.tamanhosEnviados[t] = Number(campoEtapaEnvio.querySelector('.f_tamEnv'+t).value)||0; });
+      novoLote.quantidadeEnviada = somaTam(novoLote.tamanhosEnviados, tamsAtivos());
       novoLote.quantidadeEnviadaOriginal = novoLote.quantidadeEnviada;
       if(novoLote.quantidadeEnviada<=0){ showToast('Informe a quantidade por tamanho'); return; }
       const loteOrigemSel = campoEtapaEnvio.querySelector('#f_loteCorteOrigem');
@@ -2943,17 +2962,19 @@ function openProducaoForm(){
 function openRetornoForm(loteId){
   const p = producao.find(x=>x.id===loteId);
   const isCorte = p.etapa==='corte';
+  const tams = tamsDoLote(p);
+  const aguardandoStr = tams.map(t=>t+' '+(p.tamanhosEnviados?(p.tamanhosEnviados[t]||0):0)).join(' · ');
   openModal(`
     <h3>Registrar retorno — ${escapeHtml(p.produto)}</h3>
-    <div class="field hint">${isCorte ? `Bobina enviada: ${p.pesoBobinas||0} kg, cor ${escapeHtml(p.cor||'-')}.` : `Ainda aguardando: P ${p.tamanhosEnviados?p.tamanhosEnviados.P:0} · M ${p.tamanhosEnviados?p.tamanhosEnviados.M:0} · G ${p.tamanhosEnviados?p.tamanhosEnviados.G:0} · GG ${p.tamanhosEnviados?p.tamanhosEnviados.GG:0}. Se a costureira só trouxe parte, preencha só o que voltou agora — o restante continua aguardando coleta.`}</div>
+    <div class="field hint">${isCorte ? `Bobina enviada: ${p.pesoBobinas||0} kg, cor ${escapeHtml(p.cor||'-')}.` : `Ainda aguardando: ${aguardandoStr}. Se a costureira só trouxe parte, preencha só o que voltou agora — o restante continua aguardando coleta.`}</div>
     <div class="field"><label>${isCorte?'Quanto rendeu de cada tamanho':'Quanto voltou agora de cada tamanho'}</label></div>
-    <div class="row4">
-      ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_ret${t}" type="number" min="0" value="${isCorte?0:(p.tamanhosEnviados?p.tamanhosEnviados[t]:0)}"></div>`).join('')}
+    <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr);">
+      ${tams.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_ret${t}" type="number" min="0" value="${isCorte?0:(p.tamanhosEnviados?p.tamanhosEnviados[t]:0)}"></div>`).join('')}
     </div>
     ${!isCorte ? `
     <div class="field"><label>Destas que faltam, quantas não vão mais voltar (perda)</label></div>
-    <div class="row4">
-      ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_perda${t}" type="number" min="0" value="0"></div>`).join('')}
+    <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr);">
+      ${tams.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_perda${t}" type="number" min="0" value="0"></div>`).join('')}
     </div>
     <div class="field hint">Essas entram direto em Perdas (tecido + mão de obra do corte). O que não for marcado aqui nem retornar agora continua aguardando coleta.</div>
     <div class="field"><label>Peso que voltou sem dar pra costurar (kg)</label><input id="f_pesoNao" type="number" min="0" step="0.01" value="0"></div>` : ''}
@@ -2973,8 +2994,8 @@ function openRetornoForm(loteId){
   chk.onchange = ()=>{ wrapDataPag.style.display = chk.checked ? 'block' : 'none'; };
   document.getElementById('saveRetorno').onclick = async ()=>{
     const tam = {};
-    TAMS.forEach(t=>{ tam[t] = Number(document.querySelector('.f_ret'+t).value)||0; });
-    const qtd = somaTam(tam);
+    tams.forEach(t=>{ tam[t] = Number(document.querySelector('.f_ret'+t).value)||0; });
+    const qtd = somaTam(tam, tams);
     const dataRetorno = document.getElementById('f_dataRet').value;
     const pagoNaRetirada = document.getElementById('f_pagoRetirada').checked;
     const dataPag = pagoNaRetirada ? document.getElementById('f_dataPag').value : null;
@@ -3006,18 +3027,18 @@ function openRetornoForm(loteId){
     // Costura: pode ser retorno parcial, e o que faltar pode ser marcado como perda
     const pesoNao = Number(document.getElementById('f_pesoNao').value)||0;
     const pendenteAntes = {};
-    TAMS.forEach(t=>{ pendenteAntes[t] = Number(p.tamanhosEnviados?p.tamanhosEnviados[t]:0); });
+    tams.forEach(t=>{ pendenteAntes[t] = Number(p.tamanhosEnviados?p.tamanhosEnviados[t]:0); });
     const perdaSolicitada = {};
-    TAMS.forEach(t=>{ perdaSolicitada[t] = Number(document.querySelector('.f_perda'+t).value)||0; });
+    tams.forEach(t=>{ perdaSolicitada[t] = Number(document.querySelector('.f_perda'+t).value)||0; });
     const perda = {};
     const restante = {};
-    TAMS.forEach(t=>{
+    tams.forEach(t=>{
       const sobraAposRetorno = Math.max(0, pendenteAntes[t] - (tam[t]||0));
       perda[t] = Math.min(perdaSolicitada[t]||0, sobraAposRetorno);
       restante[t] = sobraAposRetorno - perda[t];
     });
-    const qtdPerda = somaTam(perda);
-    const qtdRestante = somaTam(restante);
+    const qtdPerda = somaTam(perda, tams);
+    const qtdRestante = somaTam(restante, tams);
 
     if(qtd<=0 && qtdPerda<=0){ showToast('Informe ao menos uma peça retornada ou perdida'); return; }
 
@@ -3078,6 +3099,11 @@ function openRetornoForm(loteId){
   };
 }
 
+function tamsUniaoDeLotes(lotes){
+  const usados = new Set();
+  lotes.forEach(p => tamsDoLote(p).forEach(t=>usados.add(t)));
+  return [...TAMS_ADULTO, ...TAMS_INFANTIL].filter(t=>usados.has(t));
+}
 function openRetornoCostureirasForm(){
   const costureiras = [...new Set(producao.filter(p=>p.status==='enviado' && p.etapa==='costura').map(p=>p.funcionario))].sort();
   if(costureiras.length===0){ showToast('Nenhuma costureira com produção pendente'); return; }
@@ -3089,23 +3115,26 @@ function openRetornoCostureirasForm(){
     const el = document.getElementById('retCostureira');
     const costureira = costureiraOverride!==undefined ? costureiraOverride : (el ? el.value : costureiras[0]);
     const lotesEnviados = producao.filter(p=>p.funcionario===costureira && p.etapa==='costura' && p.status==='enviado');
-    const totaisEnviados = {P:0, M:0, G:0, GG:0};
+    const tams = tamsUniaoDeLotes(lotesEnviados);
+    const totaisEnviados = {};
+    tams.forEach(t=>totaisEnviados[t]=0);
     lotesEnviados.forEach(p=>{
       if(p.tamanhosEnviados){
-        TAMS.forEach(t=>{ totaisEnviados[t] += Number(p.tamanhosEnviados[t]||0); });
+        tams.forEach(t=>{ totaisEnviados[t] += Number(p.tamanhosEnviados[t]||0); });
       }
     });
-    const totalEnviado = somaTam(totaisEnviados);
+    const totalEnviado = somaTam(totaisEnviados, tams);
+    const aguardandoStr = tams.map(t=>t+' '+totaisEnviados[t]).join(' · ');
 
     return `
-    <div class="field hint">${lotesEnviados.length} lote(s): Aguardando P ${totaisEnviados.P} · M ${totaisEnviados.M} · G ${totaisEnviados.G} · GG ${totaisEnviados.GG} = ${totalEnviado} peças</div>
+    <div class="field hint">${lotesEnviados.length} lote(s): Aguardando ${aguardandoStr} = ${totalEnviado} peças</div>
     <div class="field"><label>Quanto voltou de cada tamanho</label></div>
-    <div class="row4">
-      ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="ret_tam${t}" type="number" min="0" value="0"></div>`).join('')}
+    <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr);">
+      ${tams.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="ret_tam${t}" type="number" min="0" value="0"></div>`).join('')}
     </div>
     <div class="field"><label>Destas que faltam, quantas não vão mais voltar (perda)</label></div>
-    <div class="row4">
-      ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="ret_perda${t}" type="number" min="0" value="0"></div>`).join('')}
+    <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr);">
+      ${tams.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="ret_perda${t}" type="number" min="0" value="0"></div>`).join('')}
     </div>
     <div class="field hint">Essas entram direto em Perdas (tecido + mão de obra do corte). O que não for marcado aqui nem retornar agora continua aguardando coleta.</div>
     <div class="field"><label>Peso que voltou sem dar pra costurar (kg)</label><input id="ret_pesoNao" type="number" min="0" step="0.01" value="0"></div>
@@ -3152,25 +3181,28 @@ function openRetornoCostureirasForm(){
     const pagoNaRetirada = document.getElementById('ret_pago').checked;
     const dataPag = pagoNaRetirada ? document.getElementById('ret_dataPag').value : null;
 
-    const tamRetornado = {};
-    TAMS.forEach(t=>{ tamRetornado[t] = Number(document.querySelector('.ret_tam'+t).value)||0; });
-    const qtdRetornada = somaTam(tamRetornado);
-
-    const perdaSolicitada = {};
-    TAMS.forEach(t=>{ perdaSolicitada[t] = Number(document.querySelector('.ret_perda'+t).value)||0; });
-
-    if(qtdRetornada<=0 && somaTam(perdaSolicitada)<=0){ showToast('Informe ao menos uma peça retornada ou perdida'); return; }
-
     let lotesEnviados = producao.filter(p=>p.funcionario===costureira && p.etapa==='costura' && p.status==='enviado');
     if(lotesEnviados.length===0){ showToast('Nenhum lote pendente'); return; }
+    const tams = tamsUniaoDeLotes(lotesEnviados);
+
+    const tamRetornado = {};
+    tams.forEach(t=>{ tamRetornado[t] = Number(document.querySelector('.ret_tam'+t).value)||0; });
+    const qtdRetornada = somaTam(tamRetornado, tams);
+
+    const perdaSolicitada = {};
+    tams.forEach(t=>{ perdaSolicitada[t] = Number(document.querySelector('.ret_perda'+t).value)||0; });
+
+    if(qtdRetornada<=0 && somaTam(perdaSolicitada, tams)<=0){ showToast('Informe ao menos uma peça retornada ou perdida'); return; }
+
     lotesEnviados.sort((a,b)=> (a.dataEnvio||'').localeCompare(b.dataEnvio||''));
 
     showToast('Registrando retorno...');
 
-    const totaisEnviados = {P:0, M:0, G:0, GG:0};
+    const totaisEnviados = {};
+    tams.forEach(t=>totaisEnviados[t]=0);
     lotesEnviados.forEach(p=>{
       if(p.tamanhosEnviados){
-        TAMS.forEach(t=>{ totaisEnviados[t] += Number(p.tamanhosEnviados[t]||0); });
+        tams.forEach(t=>{ totaisEnviados[t] += Number(p.tamanhosEnviados[t]||0); });
       }
     });
 
@@ -3178,7 +3210,7 @@ function openRetornoCostureirasForm(){
     // evita arredondamento de proporção e garante que nenhuma peça "sume" sem virar retorno, perda ou continuar pendente
     const restanteRetorno = {...tamRetornado};
     const restantePerda = {};
-    TAMS.forEach(t=>{ restantePerda[t] = Math.min(perdaSolicitada[t]||0, Math.max(0, totaisEnviados[t]-tamRetornado[t])); });
+    tams.forEach(t=>{ restantePerda[t] = Math.min(perdaSolicitada[t]||0, Math.max(0, totaisEnviados[t]-tamRetornado[t])); });
 
     const idsParaRemover = [];
     let qtdPerdaTotal = 0;
@@ -3186,7 +3218,7 @@ function openRetornoCostureirasForm(){
     lotesEnviados.forEach(lote=>{
       const pend = lote.tamanhosEnviados || {};
       const tamRetLote = {}, tamPerdaLote = {}, tamSobraLote = {};
-      TAMS.forEach(t=>{
+      tams.forEach(t=>{
         const disponivel = Number(pend[t]||0);
         const usarRetorno = Math.min(disponivel, restanteRetorno[t]||0);
         restanteRetorno[t] = (restanteRetorno[t]||0) - usarRetorno;
@@ -3197,9 +3229,9 @@ function openRetornoCostureirasForm(){
         tamPerdaLote[t] = usarPerda;
         tamSobraLote[t] = sobraAposRetorno - usarPerda;
       });
-      const qtdRetLote = somaTam(tamRetLote);
-      const qtdPerdaLote = somaTam(tamPerdaLote);
-      const qtdSobraLote = somaTam(tamSobraLote);
+      const qtdRetLote = somaTam(tamRetLote, tams);
+      const qtdPerdaLote = somaTam(tamPerdaLote, tams);
+      const qtdSobraLote = somaTam(tamSobraLote, tams);
 
       if(qtdPerdaLote>0){
         const calc = calcularPerdaNaoRetorno(lote, qtdPerdaLote);
@@ -3704,6 +3736,7 @@ function openEditarLoteForm(loteId){
   const insumosRelevantes = insumosExtras.filter(i=>i.tipo==='Ilhós'||i.tipo==='Atacador');
   const mostrarInsumos = p.etapa==='costura' && insumosRelevantes.length>0;
   const podeEditarTamanhos = p.status==='enviado' && p.tamanhosEnviados;
+  const tamsLote = tamsDoLote(p);
   openModal(`
     <h3>Editar lote — ${escapeHtml(p.produto)}</h3>
     <div class="field"><label>Produto</label><input id="f_editProd" value="${escapeHtml(p.produto)}"></div>
@@ -3711,8 +3744,8 @@ function openEditarLoteForm(loteId){
     <div class="field"><label>Valor unitário (R$)</label><input id="f_editVal" type="number" min="0" step="0.01" value="${p.valorUnit}"></div>
     ${podeEditarTamanhos ? `
     <div class="field"><label>Quantidade aguardando retirada, por tamanho</label></div>
-    <div class="row4">
-      ${TAMS.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_editTam${t}" type="number" min="0" value="${p.tamanhosEnviados[t]||0}"></div>`).join('')}
+    <div class="row4" style="grid-template-columns:repeat(${Math.min(tamsLote.length,4)},1fr);">
+      ${tamsLote.map(t=>`<div class="field" style="margin-bottom:0;"><label>${t}</label><input class="f_editTam${t}" type="number" min="0" value="${p.tamanhosEnviados[t]||0}"></div>`).join('')}
     </div>
     <div class="field hint">Use isso se digitou a quantidade errada na hora de registrar o envio.</div>
     ` : ''}
@@ -3752,9 +3785,9 @@ function openEditarLoteForm(loteId){
     p.valorUnit = Number(document.getElementById('f_editVal').value);
     if(podeEditarTamanhos){
       const novoTam = {};
-      TAMS.forEach(t=>{ novoTam[t] = Number(document.querySelector('.f_editTam'+t).value)||0; });
-      const novoTotal = somaTam(novoTam);
-      const antigoTotal = somaTam(p.tamanhosEnviados);
+      tamsLote.forEach(t=>{ novoTam[t] = Number(document.querySelector('.f_editTam'+t).value)||0; });
+      const novoTotal = somaTam(novoTam, tamsLote);
+      const antigoTotal = somaTam(p.tamanhosEnviados, tamsLote);
       const delta = novoTotal - antigoTotal;
       p.tamanhosEnviados = novoTam;
       p.quantidadeEnviada = novoTotal;
