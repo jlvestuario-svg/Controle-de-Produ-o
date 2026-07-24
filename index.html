@@ -60,7 +60,6 @@
     main{max-width:1000px; margin:0 auto; padding:32px 36px 60px;}
     .metric-grid{grid-template-columns:repeat(4,1fr);}
     .card{padding:20px 24px;}
-    .modal-overlay{align-items:center;}
     .modal{max-width:560px; border-radius:16px; max-height:85vh;}
   }
   .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; margin-bottom:12px; box-shadow:0 4px 14px rgba(0,0,0,.25);}
@@ -102,6 +101,7 @@
   .fab{position:fixed; bottom:24px; right:max(20px, calc((100vw - var(--app-max)) / 2 + 20px)); width:54px; height:54px; border-radius:50%; background:linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%); color:#14161c; border:none; font-size:26px; font-weight:700; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 20px rgba(124,140,248,.35); cursor:pointer; z-index:40;}
   .empty{text-align:center; padding:34px 10px; color:var(--text-dim); font-size:13px;}
   .modal-overlay{position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:flex-end; justify-content:center; z-index:100;}
+  @media (min-width:900px){ .modal-overlay{align-items:center;} }
   .modal{background:var(--surface); width:100%; max-width:480px; border-radius:18px 18px 0 0; padding:20px 18px 24px; max-height:88vh; overflow-y:auto; box-shadow:0 -8px 30px rgba(0,0,0,.4); border:1px solid var(--border); border-bottom:none;}
   .modal h3{margin:0 0 14px; font-size:17px;}
   .field{margin-bottom:13px;}
