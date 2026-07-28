@@ -939,12 +939,30 @@ async function loadCollection(key, migrateFn){
   return out;
 }
 
+function proximoCodigoRevisao(){
+  let maxNum = 0;
+  producao.forEach(p=>{
+    if(p.codigoRevisao){
+      const n = parseInt(String(p.codigoRevisao).replace(/\D/g,''))||0;
+      if(n>maxNum) maxNum = n;
+    }
+  });
+  return 'R'+String(maxNum+1).padStart(4,'0');
+}
+function garantirCodigosRevisao(){
+  const semCodigo = producao.filter(p=>p.etapa==='costura' && (p.status==='retornado'||p.status==='revisado') && !p.codigoRevisao);
+  if(semCodigo.length===0) return false;
+  semCodigo.sort((a,b)=>(a.dataRetorno||'').localeCompare(b.dataRetorno||''));
+  semCodigo.forEach(p=>{ p.codigoRevisao = proximoCodigoRevisao(); });
+  return true;
+}
 async function loadAll(){
   console.log('[LoadAll] Iniciando carregamento de dados...');
   console.log('[LoadAll] firebaseApp:', !!firebaseApp, 'firebaseDb:', !!firebaseDb, 'firebaseAvailable:', firebaseAvailable);
 
   producao = await loadCollection('producao', migrateLote);
   console.log('[LoadAll] Produção:', producao.length);
+  if(garantirCodigosRevisao()){ await saveProducao(); }
 
   perdas = await loadCollection('perdas', null);
   console.log('[LoadAll] Perdas:', perdas.length);
@@ -1378,7 +1396,7 @@ function renderProducao(){
         const revisadoTag = f.status==='revisado' ? `<span class="tag tag-revisado">Revisado</span>` : `<span class="tag tag-retornado">Aguard. revisão</span>`;
         html += `<div class="subitem">
           <div class="subitem-label" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
-            <span>Retirada de ${fmtDateBR(f.dataRetorno)}</span>
+            <span>${f.codigoRevisao?`<span class="mono" style="color:var(--accent);">${escapeHtml(f.codigoRevisao)}</span> · `:''}Retirada de ${fmtDateBR(f.dataRetorno)}</span>
             <span>${pagoTag} ${revisadoTag}</span>
           </div>
           <div class="subitem-row">${f.quantidadeRetornada||0} peça(s)${tamStr?(' · '+tamStr):''} · ${fmtMoney(f.valorTotal)}${f.paga?(' · pago em '+fmtDateBR(f.dataPagamento)):''}</div>
@@ -1399,20 +1417,42 @@ function renderProducao(){
   return html;
 }
 
+let revisaoBusca = '';
 function renderRevisao(){
-  const pendentes = producao.filter(p=>p.status==='retornado' && p.etapa==='costura').sort((a,b)=>a.dataRetorno.localeCompare(b.dataRetorno));
-  const revisados = [...producao].filter(p=>p.status==='revisado' && p.etapa==='costura').sort((a,b)=>b.dataRetorno.localeCompare(a.dataRetorno)).slice(0,8);
+  const leafLabelCor = p => {
+    if(!p.loteCorteOrigemId) return null;
+    const origem = producao.find(x=>x.id===p.loteCorteOrigemId);
+    return origem ? origem.cor : null;
+  };
+  let pendentes = producao.filter(p=>p.status==='retornado' && p.etapa==='costura').sort((a,b)=>a.dataRetorno.localeCompare(b.dataRetorno));
+  let revisados = [...producao].filter(p=>p.status==='revisado' && p.etapa==='costura').sort((a,b)=>b.dataRetorno.localeCompare(a.dataRetorno));
 
-  let html = '';
-  html += `<div class="section-title">Aguardando revisão</div>`;
+  let html = `<div class="field"><input id="revisao_busca" placeholder="Buscar por código, produto, cor ou costureira..." value="${escapeHtml(revisaoBusca)}"></div>`;
+
+  if(revisaoBusca.trim()){
+    const q = normalizeTxt(revisaoBusca);
+    const bate = p => {
+      const cor = leafLabelCor(p) || '';
+      return normalizeTxt(p.codigoRevisao||'').includes(q) || normalizeTxt(p.produto).includes(q) || normalizeTxt(cor).includes(q) || normalizeTxt(p.funcionario).includes(q);
+    };
+    pendentes = pendentes.filter(bate);
+    revisados = revisados.filter(bate);
+  }
+  revisados = revisados.slice(0,8);
+
+  html += `<div class="section-title">Aguardando revisão${revisaoBusca.trim()?(' ('+pendentes.length+' encontrado(s))'):''}</div>`;
   if(pendentes.length===0){
-    html += `<div class="empty">Nenhum lote de costura esperando revisão.</div>`;
+    html += `<div class="empty">${revisaoBusca.trim()?'Nenhum resultado com esse filtro.':'Nenhum lote de costura esperando revisão.'}</div>`;
   }else{
     html += `<div class="card">`;
     pendentes.forEach(p=>{
+      const cor = leafLabelCor(p);
       html += `<div class="item">
         <div class="item-top">
-          <div><div class="item-title">${escapeHtml(p.produto)}</div><div class="item-sub">${escapeHtml(p.funcionario)} · retornaram ${p.quantidadeRetornada} peças</div></div>
+          <div>
+            <div class="item-title">${p.codigoRevisao?`<span class="mono" style="color:var(--accent);">${escapeHtml(p.codigoRevisao)}</span> · `:''}${escapeHtml(p.produto)}${cor?(' · '+escapeHtml(cor)):''}</div>
+            <div class="item-sub">${escapeHtml(p.funcionario)} · retornaram ${p.quantidadeRetornada} peças · ${fmtDateBR(p.dataRetorno)}</div>
+          </div>
           <span class="tag tag-${p.etapa}">${STAGE_LABEL[p.etapa]}</span>
         </div>
         <div class="item-actions">
@@ -1425,15 +1465,19 @@ function renderRevisao(){
     html += `</div>`;
   }
 
-  html += `<div class="section-title">Últimas revisões</div>`;
+  html += `<div class="section-title">Últimas revisões${revisaoBusca.trim()?(' ('+revisados.length+')'):''}</div>`;
   if(revisados.length===0){
-    html += `<div class="empty">Nenhuma revisão registrada ainda.</div>`;
+    html += `<div class="empty">${revisaoBusca.trim()?'Nenhum resultado com esse filtro.':'Nenhuma revisão registrada ainda.'}</div>`;
   }else{
     html += `<div class="card">`;
     revisados.forEach(p=>{
+      const cor = leafLabelCor(p);
       html += `<div class="item">
         <div class="item-top">
-          <div><div class="item-title">${escapeHtml(p.produto)}</div><div class="item-sub">${escapeHtml(p.funcionario)} · ${fmtDateBR(p.dataRetorno)}</div></div>
+          <div>
+            <div class="item-title">${p.codigoRevisao?`<span class="mono" style="color:var(--accent);">${escapeHtml(p.codigoRevisao)}</span> · `:''}${escapeHtml(p.produto)}${cor?(' · '+escapeHtml(cor)):''}</div>
+            <div class="item-sub">${escapeHtml(p.funcionario)} · ${fmtDateBR(p.dataRetorno)}</div>
+          </div>
           <div class="item-right">${p.quantidadeAproveitavel}/${p.quantidadeRetornada} aproveitáveis</div>
         </div>
         ${p.quantidadeNaoAproveitavel>0 ? `<div class="item-note" style="color:var(--perda)">${p.quantidadeNaoAproveitavel} peça(s) descartada(s)${p.pesoDescartado?(' · '+p.pesoDescartado+' kg'):''} · Prejuízo total: ${fmtMoney(p.valorPrejuizoTotal||0)}</div>` : ''}
@@ -2716,6 +2760,11 @@ function attachDynamicHandlers(){
   if(btnPagExtrato) btnPagExtrato.onclick = ()=>{ pagamentosView='extrato'; render(); };
   const selExtratoFunc = document.getElementById('selExtratoFunc');
   if(selExtratoFunc) selExtratoFunc.onchange = ()=>{ extratoFuncSelecionado = selExtratoFunc.value; render(); };
+  const revisaoBuscaInput = document.getElementById('revisao_busca');
+  if(revisaoBuscaInput){
+    revisaoBuscaInput.onchange = ()=>{ revisaoBusca = revisaoBuscaInput.value; render(); };
+    revisaoBuscaInput.onkeydown = (e)=>{ if(e.key==='Enter') revisaoBuscaInput.blur(); };
+  }
 }
 
 function buildResumoMensal(){
@@ -3147,6 +3196,7 @@ function openRetornoForm(loteId){
         registro.quantidadeRetornada = qtd;
         registro.dataRetorno = dataRetorno;
         registro.status = 'retornado';
+        registro.codigoRevisao = proximoCodigoRevisao();
         registro.paga = pagoNaRetirada;
         registro.dataPagamento = dataPag;
         registro.valorTotal = qtd * Number(p.valorUnit||0);
@@ -3156,7 +3206,7 @@ function openRetornoForm(loteId){
       p.tamanhosEnviados = restante;
       p.quantidadeEnviada = qtdRestante;
       await saveProducao(); closeModal(); render();
-      showToast((qtdPerda>0?'Perda registrada. ':'')+'Retorno parcial registrado. Ainda faltam '+qtdRestante+' peça(s) pra retirar.');
+      showToast((qtdPerda>0?'Perda registrada. ':'')+'Retorno parcial registrado. Ainda faltam '+qtdRestante+' peça(s) pra retirar. Código: '+registro.codigoRevisao);
     }else{
       // fecha o lote: o que voltou agora é o retorno final (o resto, se houver, já virou perda acima)
       p.tamanhosRetornados = tam;
@@ -3164,10 +3214,11 @@ function openRetornoForm(loteId){
       p.dataRetorno = dataRetorno;
       p.valorTotal = qtd * Number(p.valorUnit||0);
       p.status = 'retornado';
+      p.codigoRevisao = p.codigoRevisao || proximoCodigoRevisao();
       p.paga = pagoNaRetirada;
       p.dataPagamento = dataPag;
       p.pesoNaoCosturado = pesoNao;
-      await saveProducao(); closeModal(); render(); showToast('Retorno registrado'+(qtdPerda>0?' e perda registrada':'')+'.');
+      await saveProducao(); closeModal(); render(); showToast('Retorno registrado'+(qtdPerda>0?' e perda registrada':'')+'. Código: '+p.codigoRevisao);
     }
   };
 }
@@ -3287,6 +3338,7 @@ function openRetornoCostureirasForm(){
 
     const idsParaRemover = [];
     let qtdPerdaTotal = 0;
+    const codigosGerados = [];
 
     lotesEnviados.forEach(lote=>{
       const pend = lote.tamanhosEnviados || {};
@@ -3325,6 +3377,8 @@ function openRetornoCostureirasForm(){
         lote.quantidadeRetornada = qtdRetLote;
         lote.dataRetorno = dataRetorno;
         lote.status = 'retornado';
+        lote.codigoRevisao = lote.codigoRevisao || proximoCodigoRevisao();
+        codigosGerados.push(lote.codigoRevisao);
         lote.valorTotal = qtdRetLote * Number(lote.valorUnit||0);
         lote.paga = pagoNaRetirada;
         lote.dataPagamento = dataPag;
@@ -3338,6 +3392,8 @@ function openRetornoCostureirasForm(){
         registro.quantidadeRetornada = qtdRetLote;
         registro.dataRetorno = dataRetorno;
         registro.status = 'retornado';
+        registro.codigoRevisao = proximoCodigoRevisao();
+        codigosGerados.push(registro.codigoRevisao);
         registro.paga = pagoNaRetirada;
         registro.dataPagamento = dataPag;
         registro.valorTotal = qtdRetLote * Number(lote.valorUnit||0);
@@ -3364,7 +3420,7 @@ function openRetornoCostureirasForm(){
     if(qtdPerdaTotal>0 || pesoNao>0) await savePerdas();
     await saveProducao();
     closeModal(); render();
-    showToast('✅ Retorno registrado: '+qtdRetornada+' peça(s)' + (qtdPerdaTotal>0 ? ' + '+qtdPerdaTotal+' perda' : ''));
+    showToast('✅ Retorno registrado: '+qtdRetornada+' peça(s)' + (qtdPerdaTotal>0 ? ' + '+qtdPerdaTotal+' perda' : '') + (codigosGerados.length>0 ? ' · Código(s): '+codigosGerados.join(', ') : ''));
   };
 }
 
