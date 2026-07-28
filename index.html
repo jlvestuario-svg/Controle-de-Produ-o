@@ -950,11 +950,38 @@ function proximoCodigoRevisao(){
   return 'R'+String(maxNum+1).padStart(4,'0');
 }
 function garantirCodigosRevisao(){
-  const semCodigo = producao.filter(p=>p.etapa==='costura' && (p.status==='retornado'||p.status==='revisado') && !p.codigoRevisao);
-  if(semCodigo.length===0) return false;
-  semCodigo.sort((a,b)=>(a.dataRetorno||'').localeCompare(b.dataRetorno||''));
-  semCodigo.forEach(p=>{ p.codigoRevisao = proximoCodigoRevisao(); });
-  return true;
+  let changed = false;
+  const grupos = {};
+  producao.forEach(p=>{
+    const key = p.envioGrupoId || p.id;
+    if(!grupos[key]) grupos[key] = [];
+    grupos[key].push(p);
+  });
+  const gruposCorte = Object.values(grupos).filter(g=>g[0].etapa==='corte').sort((a,b)=>(a[0].dataEnvio||'').localeCompare(b[0].dataEnvio||''));
+  gruposCorte.forEach(g=>{
+    if(!g[0].codigoRevisao){
+      const codigo = proximoCodigoRevisao();
+      g.forEach(p=>{ p.codigoRevisao = codigo; });
+      changed = true;
+    }
+  });
+  const gruposCostura = Object.values(grupos).filter(g=>g[0].etapa==='costura').sort((a,b)=>(a[0].dataEnvio||'').localeCompare(b[0].dataEnvio||''));
+  gruposCostura.forEach(g=>{
+    const origemId = g[0].loteCorteOrigemId;
+    const origem = origemId ? producao.find(x=>x.id===origemId) : null;
+    if(origem && origem.codigoRevisao){
+      // sempre alinha ao código do corte de origem, mesmo que este grupo já tivesse um código próprio de antes
+      if(g.some(p=>p.codigoRevisao !== origem.codigoRevisao)){
+        g.forEach(p=>{ p.codigoRevisao = origem.codigoRevisao; });
+        changed = true;
+      }
+    }else if(g.some(p=>!p.codigoRevisao)){
+      const codigo = proximoCodigoRevisao();
+      g.forEach(p=>{ if(!p.codigoRevisao) p.codigoRevisao = codigo; });
+      changed = true;
+    }
+  });
+  return changed;
 }
 async function loadAll(){
   console.log('[LoadAll] Iniciando carregamento de dados...');
@@ -1276,6 +1303,7 @@ function buildChartSvg(base){
   return `<svg viewBox="0 0 ${w} ${h}" style="width:100%; height:auto; display:block;">${bars}</svg>`;
 }
 
+let producaoBusca = '';
 function renderProducao(){
   // agrupa por envio original (envioGrupoId), assim retiradas parciais do mesmo envio ficam num só card
   const grupos = {};
@@ -1288,16 +1316,25 @@ function renderProducao(){
 
   let listaGrupos = Object.values(grupos);
   listaGrupos = producaoFiltro==='ativos' ? listaGrupos.filter(g=>!grupoConcluido(g)) : listaGrupos.filter(g=>grupoConcluido(g));
-  listaGrupos.sort((a,b)=> b[0].dataEnvio.localeCompare(a[0].dataEnvio));
 
   let html = `<div class="filter-row">
     <button class="btn-toggle ${producaoFiltro==='ativos'?'active':''}" id="btnFiltroAtivos">Em produção</button>
     <button class="btn-toggle ${producaoFiltro==='concluidos'?'active':''}" id="btnFiltroConcluidos">Concluídos</button>
     <button class="btn" id="btnRetornoCostureira" style="margin-left:auto;">📊 Retorno por Costureira</button>
   </div>`;
+  html += `<div class="field"><input id="producao_busca" placeholder="Buscar por código ou costureira..." value="${escapeHtml(producaoBusca)}"></div>`;
+
+  if(producaoBusca.trim()){
+    const q = normalizeTxt(producaoBusca);
+    listaGrupos = listaGrupos.filter(g=>{
+      const head = g[0];
+      return normalizeTxt(head.codigoRevisao||'').includes(q) || normalizeTxt(head.funcionario||'').includes(q);
+    });
+  }
+  listaGrupos.sort((a,b)=> b[0].dataEnvio.localeCompare(a[0].dataEnvio));
 
   if(listaGrupos.length===0){
-    html += `<div class="empty">Nenhum lote nesta lista.</div>`;
+    html += `<div class="empty">${producaoBusca.trim()?'Nenhum resultado com esse filtro.':'Nenhum lote nesta lista.'}</div>`;
     return html;
   }
   html += `<div class="card">`;
@@ -1314,7 +1351,7 @@ function renderProducao(){
     html += `<div class="item">
       <div class="item-top">
         <div>
-          <div class="item-title">${escapeHtml(head.produto)}${isCorte?(' · '+escapeHtml(head.cor||'-')):(corCostura?(' · '+escapeHtml(corCostura)):'')}</div>
+          <div class="item-title">${head.codigoRevisao?`<span class="mono" style="color:var(--accent);">${escapeHtml(head.codigoRevisao)}</span> · `:''}${escapeHtml(head.produto)}${isCorte?(' · '+escapeHtml(head.cor||'-')):(corCostura?(' · '+escapeHtml(corCostura)):'')}</div>
           <div class="item-sub">${escapeHtml(head.funcionario)} · enviado ${fmtDateBR(head.dataEnvio)}${isCorte&&head.pesoBobinas?(' · '+head.pesoBobinas+' kg'):''}</div>
         </div>
         <div class="item-right">
@@ -2765,6 +2802,11 @@ function attachDynamicHandlers(){
     revisaoBuscaInput.onchange = ()=>{ revisaoBusca = revisaoBuscaInput.value; render(); };
     revisaoBuscaInput.onkeydown = (e)=>{ if(e.key==='Enter') revisaoBuscaInput.blur(); };
   }
+  const producaoBuscaInput = document.getElementById('producao_busca');
+  if(producaoBuscaInput){
+    producaoBuscaInput.onchange = ()=>{ producaoBusca = producaoBuscaInput.value; render(); };
+    producaoBuscaInput.onkeydown = (e)=>{ if(e.key==='Enter') producaoBuscaInput.blur(); };
+  }
 }
 
 function buildResumoMensal(){
@@ -2970,7 +3012,7 @@ function openProducaoForm(){
       campoEtapaEnvio.innerHTML = tamanhoInputsHtml('f_tamEnv') + `
         <div class="field"><label>Lote de corte de origem (opcional)</label><select id="f_loteCorteOrigem">
           <option value="">Não sei / não informar</option>
-          ${lotesCorteDisponiveis.map(x=>`<option value="${x.id}">${escapeHtml(x.produto)} · ${escapeHtml(x.cor||'-')} · ${fmtDateBR(x.dataRetorno)}${x.numeroLoteFornecedor?(' · pedido '+escapeHtml(x.numeroLoteFornecedor)):''}</option>`).join('')}
+          ${lotesCorteDisponiveis.map(x=>`<option value="${x.id}">${x.codigoRevisao?(x.codigoRevisao+' · '):''}${escapeHtml(x.produto)} · ${escapeHtml(x.cor||'-')} · ${fmtDateBR(x.dataRetorno)}${x.numeroLoteFornecedor?(' · pedido '+escapeHtml(x.numeroLoteFornecedor)):''}</option>`).join('')}
         </select></div>
         <div class="field hint">Ligar ao lote de corte deixa o custo de matéria-prima exato desse lote (em vez de uma média) para calcular perdas depois.</div>
         ${insumosRelevantes.length>0 ? `
@@ -3045,6 +3087,7 @@ function openProducaoForm(){
       novoLote.tamanhosSolicitados = {};
       tamsAtivos().forEach(t=>{ novoLote.tamanhosSolicitados[t] = false; });
       campoEtapaEnvio.querySelectorAll('.f_tamSolic').forEach(chk=>{ if(chk.checked) novoLote.tamanhosSolicitados[chk.value] = true; });
+      novoLote.codigoRevisao = proximoCodigoRevisao();
     }else{
       novoLote.tamanhosEnviados = {};
       tamsAtivos().forEach(t=>{ novoLote.tamanhosEnviados[t] = Number(campoEtapaEnvio.querySelector('.f_tamEnv'+t).value)||0; });
@@ -3063,12 +3106,14 @@ function openProducaoForm(){
         const pesoTec = loteOrigem ? Number(loteOrigem.pesoBobinas||0) : 0;
         const pesoRib = loteOrigem ? Number(loteOrigem.pesoRibana||0) : 0;
         novoLote.proporcaoTecidoHerdada = (pesoTec+pesoRib)>0 ? pesoTec/(pesoTec+pesoRib) : null;
+        novoLote.codigoRevisao = (loteOrigem && loteOrigem.codigoRevisao) ? loteOrigem.codigoRevisao : proximoCodigoRevisao();
       }else{
         novoLote.custoCorteHerdado = null;
         novoLote.precoKgTecidoHerdado = null;
         novoLote.precoKgRibanaHerdado = null;
         novoLote.custoLaborCorteHerdado = null;
         novoLote.proporcaoTecidoHerdada = null;
+        novoLote.codigoRevisao = proximoCodigoRevisao();
       }
       novoLote.insumosEnviados = {};
       campoEtapaEnvio.querySelectorAll('.f_insumoEnv').forEach(inp=>{
@@ -3196,7 +3241,7 @@ function openRetornoForm(loteId){
         registro.quantidadeRetornada = qtd;
         registro.dataRetorno = dataRetorno;
         registro.status = 'retornado';
-        registro.codigoRevisao = proximoCodigoRevisao();
+        registro.codigoRevisao = registro.codigoRevisao || proximoCodigoRevisao();
         registro.paga = pagoNaRetirada;
         registro.dataPagamento = dataPag;
         registro.valorTotal = qtd * Number(p.valorUnit||0);
@@ -3392,7 +3437,7 @@ function openRetornoCostureirasForm(){
         registro.quantidadeRetornada = qtdRetLote;
         registro.dataRetorno = dataRetorno;
         registro.status = 'retornado';
-        registro.codigoRevisao = proximoCodigoRevisao();
+        registro.codigoRevisao = registro.codigoRevisao || proximoCodigoRevisao();
         codigosGerados.push(registro.codigoRevisao);
         registro.paga = pagoNaRetirada;
         registro.dataPagamento = dataPag;
