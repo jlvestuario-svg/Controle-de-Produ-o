@@ -3494,9 +3494,11 @@ function calcularPerdaRevisao(p, naoAprov, pesoDescartado){
 
 function openRevisaoForm(loteId){
   const p = producao.find(x=>x.id===loteId);
+  const origem = p.loteCorteOrigemId ? producao.find(x=>x.id===p.loteCorteOrigemId) : null;
+  const cor = origem ? origem.cor : null;
   openModal(`
-    <h3>Revisão — ${escapeHtml(p.produto)}</h3>
-    <div class="field hint">Retornaram ${p.quantidadeRetornada} peças de ${escapeHtml(p.funcionario)}. Informe quantas podem ser aproveitadas.</div>
+    <h3>${p.codigoRevisao?escapeHtml(p.codigoRevisao)+' · ':''}${escapeHtml(p.produto)}${cor?(' · '+escapeHtml(cor)):''}</h3>
+    <div class="field hint">Retornaram ${p.quantidadeRetornada} peças de ${escapeHtml(p.funcionario)} em ${fmtDateBR(p.dataRetorno)}. Informe quantas podem ser aproveitadas.</div>
     <div class="field"><label>Peças aproveitáveis</label><input id="f_aprov" type="number" min="0" max="${p.quantidadeRetornada}" value="${p.quantidadeRetornada}"></div>
     <div class="field"><label>Peso total das peças descartadas (kg)</label><input id="f_pesoDescartado" type="number" min="0" step="0.01" value="0"></div>
     <div class="field hint">Pesa todas as peças descartadas juntas, sem precisar pesar uma por uma. O sistema calcula sozinho o tecido, a ribana e o custo total perdido.</div>
@@ -3535,10 +3537,12 @@ function openRevisaoForm(loteId){
 
 function openEditarRevisaoForm(loteId){
   const p = producao.find(x=>x.id===loteId);
+  const origem = p.loteCorteOrigemId ? producao.find(x=>x.id===p.loteCorteOrigemId) : null;
+  const cor = origem ? origem.cor : null;
   openModal(`
-    <h3>Editar revisão — ${escapeHtml(p.produto)}</h3>
+    <h3>Editar revisão — ${p.codigoRevisao?escapeHtml(p.codigoRevisao)+' · ':''}${escapeHtml(p.produto)}${cor?(' · '+escapeHtml(cor)):''}</h3>
     <div class="field"><label>Produto</label><input id="f_editRevProd" value="${escapeHtml(p.produto)}"></div>
-    <div class="field hint">Retornaram ${p.quantidadeRetornada} peças de ${escapeHtml(p.funcionario)}.</div>
+    <div class="field hint">Retornaram ${p.quantidadeRetornada} peças de ${escapeHtml(p.funcionario)} em ${fmtDateBR(p.dataRetorno)}.</div>
     <div class="field"><label>Peças aproveitáveis</label><input id="f_aprov" type="number" min="0" max="${p.quantidadeRetornada}" value="${p.quantidadeAproveitavel}"></div>
     <div class="field"><label>Peso total das peças descartadas (kg)</label><input id="f_pesoDescartado" type="number" min="0" step="0.01" value="${p.pesoDescartado||0}"></div>
     <div class="modal-actions">
