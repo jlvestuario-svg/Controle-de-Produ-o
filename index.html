@@ -2926,7 +2926,7 @@ function openFormForTab(){
   else if(activeTab==='config') openFuncionarioForm();
 }
 
-function openProducaoForm(){
+function openProducaoForm(prefill){
   if(config.length===0){
     showToast('Cadastre uma costureira na aba Config primeiro');
     activeTab='config'; document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab==='config'));
@@ -3034,6 +3034,16 @@ function openProducaoForm(){
         campoEtapaEnvio.querySelector('#f_tamEnvtotal').value = total;
       };
       tamsAtivos().forEach(t=>{ campoEtapaEnvio.querySelector('.f_tamEnv'+t).oninput = recalc; });
+
+      if(prefill && prefill.tamanhos){
+        const loteSel = campoEtapaEnvio.querySelector('#f_loteCorteOrigem');
+        if(loteSel && prefill.loteCorteOrigemId) loteSel.value = prefill.loteCorteOrigemId;
+        Object.entries(prefill.tamanhos).forEach(([t,qtd])=>{
+          const inp = campoEtapaEnvio.querySelector('.f_tamEnv'+t);
+          if(inp) inp.value = qtd;
+        });
+        recalc();
+      }
     }
   }
 
@@ -3041,7 +3051,7 @@ function openProducaoForm(){
     const nome = funcSelect.value;
     if(!nome){ listaProd.innerHTML=''; return; }
     const opt = funcSelect.selectedOptions[0];
-    etapaSelect.value = opt.dataset.etapa;
+    etapaSelect.value = prefill ? 'costura' : opt.dataset.etapa;
     const f = config.find(c=>c.nome===nome);
     listaProd.innerHTML = f ? f.rates.map(r=>`<option value="${escapeHtml(r.produto)}">`).join('') : '';
     refreshEtapaFields();
@@ -3058,6 +3068,23 @@ function openProducaoForm(){
   sistemaTamSelect.onchange = refreshEtapaFields;
   prodInput.onchange = refreshValor;
   refreshForFunc();
+
+  if(prefill){
+    etapaSelect.value = 'costura';
+    if(prefill.sistemaTamanho) sistemaTamSelect.value = prefill.sistemaTamanho;
+    refreshEtapaFields();
+    prodInput.value = prefill.produto || '';
+    const loteSel = campoEtapaEnvio.querySelector('#f_loteCorteOrigem');
+    if(loteSel && prefill.loteCorteOrigemId) loteSel.value = prefill.loteCorteOrigemId;
+    if(prefill.tamanhos){
+      Object.entries(prefill.tamanhos).forEach(([t,qtd])=>{
+        const inp = campoEtapaEnvio.querySelector('.f_tamEnv'+t);
+        if(inp) inp.value = qtd;
+      });
+      const primeiroInp = campoEtapaEnvio.querySelector('.f_tamEnv'+Object.keys(prefill.tamanhos)[0]);
+      if(primeiroInp) primeiroInp.dispatchEvent(new Event('input'));
+    }
+  }
 
   document.getElementById('saveProd').onclick = async ()=>{
     if(!funcSelect.value){ showToast('Escolha a costureira/funcionário'); return; }
@@ -3190,7 +3217,26 @@ function openRetornoForm(loteId){
         p.rendimentoObtido = qtd;
         p.diferencaRendimento = Number(p.metaRendimentoBobina||0)>0 ? qtd - Number(p.metaRendimentoBobina) : null;
       }
-      await saveProducao(); closeModal(); render(); showToast('Retorno registrado');
+      await saveProducao(); render();
+      openModal(`
+        <h3>✅ Retorno registrado</h3>
+        <div class="field hint">Rendeu ${qtd} peça(s) de ${escapeHtml(p.produto)}${p.cor?(' · '+escapeHtml(p.cor)):''}${p.codigoRevisao?(' · '+escapeHtml(p.codigoRevisao)):''}.</div>
+        <div class="field hint">Quer já enviar essas peças pra uma costureira agora, ou deixar no estoque pra decidir depois?</div>
+        <div class="modal-actions">
+          <button class="btn" id="btnFicaEstoque">Deixar no estoque</button>
+          <button class="btn btn-primary" id="btnEnviarAgora">Enviar para costureira agora</button>
+        </div>
+      `);
+      document.getElementById('btnFicaEstoque').onclick = ()=>{ closeModal(); };
+      document.getElementById('btnEnviarAgora').onclick = ()=>{
+        closeModal();
+        openProducaoForm({
+          produto: p.produto,
+          sistemaTamanho: p.sistemaTamanho,
+          tamanhos: tam,
+          loteCorteOrigemId: p.id
+        });
+      };
       return;
     }
 
