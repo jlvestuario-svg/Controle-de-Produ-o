@@ -3168,88 +3168,139 @@ function openCorteMultiploForm(){
   const cortadores = config.filter(c=>c.etapa==='corte');
   const listaCortadores = cortadores.length>0 ? cortadores : config;
 
-  function novaLinhaCorte(base){
+  function novaBobina(base){
     return {
       produto: base ? base.produto : '',
-      cor: '',
       sistemaTamanho: base ? base.sistemaTamanho : 'adulto',
-      fornecedor: base ? base.fornecedor : '',
-      peso: 0, precoTecido: base ? base.precoTecido : 0,
-      pesoRibana: 0, precoRibana: base ? base.precoRibana : 0,
-      numeroLote: '', metaRendimento: base ? base.metaRendimento : 0,
+      peso: 0, pesoRibana: 0,
+      metaRendimento: base ? base.metaRendimento : 0,
       tamanhos: {}, valorUnit: base ? base.valorUnit : 0
     };
   }
-  let linhas = [novaLinhaCorte()];
+  function novaCor(){
+    return { cor: '', fornecedor: '', precoTecido: 0, precoRibana: 0, numeroLote: '', bobinas: [novaBobina()] };
+  }
+  let cores = [novaCor()];
 
-  function renderLinhas(){
-    const cont = document.getElementById('corteLinhasContainer');
-    cont.innerHTML = linhas.map((l,i)=>{
-      const tams = l.sistemaTamanho==='infantil' ? TAMS_INFANTIL : TAMS_ADULTO;
-      return `<div class="card" style="margin-bottom:12px;">
+  function renderCores(){
+    const cont = document.getElementById('corteCoresContainer');
+    cont.innerHTML = cores.map((c,ci)=>`
+      <div class="card" style="margin-bottom:14px; border:1px solid var(--accent-soft);">
         <div class="item-top" style="margin-bottom:8px;">
-          <div class="item-title">Lote ${i+1}</div>
-          ${linhas.length>1?`<button type="button" class="btn btn-danger" data-remove="${i}">Remover</button>`:''}
+          <div class="item-title">Cor ${ci+1}</div>
+          ${cores.length>1?`<button type="button" class="btn btn-danger" data-rm-cor="${ci}">Remover cor</button>`:''}
         </div>
         <div class="row2">
-          <div class="field"><label>Produto</label><input class="ln_produto" data-i="${i}" value="${escapeHtml(l.produto)}" placeholder="Ex: Moletom Canguru"></div>
-          <div class="field"><label>Cor</label><input class="ln_cor" data-i="${i}" value="${escapeHtml(l.cor)}" placeholder="Ex: Preto"></div>
+          <div class="field"><label>Cor</label><input class="cr_cor" data-ci="${ci}" value="${escapeHtml(c.cor)}" placeholder="Ex: Bege"></div>
+          <div class="field"><label>Número do pedido</label><input class="cr_numeroLote" data-ci="${ci}" value="${escapeHtml(c.numeroLote)}" placeholder="Ex: 2026-0714"></div>
         </div>
         <div class="row2">
-          <div class="field"><label>Tamanhos</label><select class="ln_sistema" data-i="${i}">
-            <option value="adulto" ${l.sistemaTamanho==='adulto'?'selected':''}>Adulto (P, M, G, GG)</option>
-            <option value="infantil" ${l.sistemaTamanho==='infantil'?'selected':''}>Infantil (2 ao 16)</option>
-          </select></div>
-          <div class="field"><label>Fornecedor</label><select class="ln_fornecedor" data-i="${i}">
+          <div class="field"><label>Fornecedor</label><select class="cr_fornecedor" data-ci="${ci}">
             <option value="">Nenhum</option>
-            ${fornecedores.map(f=>`<option value="${escapeHtml(f.nome)}" data-preco-tec="${f.precoTecidoKg}" data-preco-rib="${f.precoRibanaKg}" ${l.fornecedor===f.nome?'selected':''}>${escapeHtml(f.nome)} (${escapeHtml(f.tipoTecido)})</option>`).join('')}
+            ${fornecedores.map(f=>`<option value="${escapeHtml(f.nome)}" data-preco-tec="${f.precoTecidoKg}" data-preco-rib="${f.precoRibanaKg}" ${c.fornecedor===f.nome?'selected':''}>${escapeHtml(f.nome)} (${escapeHtml(f.tipoTecido)})</option>`).join('')}
+          </select></div>
+          <div></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Preço tecido (R$/kg)</label><input class="cr_precoTecido" data-ci="${ci}" type="number" min="0" step="0.01" value="${c.precoTecido}"></div>
+          <div class="field"><label>Preço ribana (R$/kg)</label><input class="cr_precoRibana" data-ci="${ci}" type="number" min="0" step="0.01" value="${c.precoRibana}"></div>
+        </div>
+        <div class="field hint">Peso, tamanhos e sistema (adulto/infantil) são por bobina — divida o peso total dessa cor entre as bobinas abaixo do seu jeito.</div>
+        <div class="stitch"></div>
+        <div id="bobinasCor${ci}"></div>
+        <button type="button" class="btn" data-add-bobina="${ci}" style="width:100%; margin-top:6px;">+ Adicionar bobina nesta cor</button>
+      </div>`).join('');
+
+    cores.forEach((c,ci)=>renderBobinas(ci));
+
+    cont.querySelectorAll('[data-rm-cor]').forEach(btn=>{
+      btn.onclick = ()=>{ cores.splice(Number(btn.dataset.rmCor),1); renderCores(); };
+    });
+    cont.querySelectorAll('[data-add-bobina]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const ci = Number(btn.dataset.addBobina);
+        const bobs = cores[ci].bobinas;
+        cores[ci].bobinas.push(novaBobina(bobs[bobs.length-1]));
+        renderBobinas(ci);
+      };
+    });
+    cont.querySelectorAll('.cr_cor, .cr_numeroLote, .cr_precoTecido, .cr_precoRibana').forEach(el=>{
+      const campo = el.className.replace('cr_','');
+      el.onchange = ()=>{
+        const ci = Number(el.dataset.ci);
+        cores[ci][campo] = el.type==='number' ? (Number(el.value)||0) : el.value;
+      };
+    });
+    cont.querySelectorAll('.cr_fornecedor').forEach(el=>{
+      el.onchange = ()=>{
+        const ci = Number(el.dataset.ci);
+        cores[ci].fornecedor = el.value;
+        const opt = el.selectedOptions[0];
+        cores[ci].precoTecido = Number(opt.dataset.precoTec)||0;
+        cores[ci].precoRibana = Number(opt.dataset.precoRib)||0;
+        renderCores();
+      };
+    });
+  }
+
+  function renderBobinas(ci){
+    const bobCont = document.getElementById('bobinasCor'+ci);
+    const bobinas = cores[ci].bobinas;
+    bobCont.innerHTML = bobinas.map((b,bi)=>{
+      const tams = b.sistemaTamanho==='infantil' ? TAMS_INFANTIL : TAMS_ADULTO;
+      return `<div class="subitem" style="margin-bottom:10px;">
+        <div class="subitem-label" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Bobina ${bi+1}</span>
+          ${bobinas.length>1?`<button type="button" class="btn btn-danger" data-rm-bobina="${ci}:${bi}">Remover</button>`:''}
+        </div>
+        <div class="row2">
+          <div class="field"><label>Produto</label><input class="bb_produto" data-ci="${ci}" data-bi="${bi}" value="${escapeHtml(b.produto)}" placeholder="Ex: Moletom Canguru"></div>
+          <div class="field"><label>Tamanhos</label><select class="bb_sistema" data-ci="${ci}" data-bi="${bi}">
+            <option value="adulto" ${b.sistemaTamanho==='adulto'?'selected':''}>Adulto (P,M,G,GG)</option>
+            <option value="infantil" ${b.sistemaTamanho==='infantil'?'selected':''}>Infantil (2 ao 16)</option>
           </select></div>
         </div>
         <div class="row2">
-          <div class="field"><label>Peso do tecido (kg)</label><input class="ln_peso" data-i="${i}" type="number" min="0" step="0.01" value="${l.peso}"></div>
-          <div class="field"><label>Preço tecido (R$/kg)</label><input class="ln_precoTecido" data-i="${i}" type="number" min="0" step="0.01" value="${l.precoTecido}"></div>
+          <div class="field"><label>Peso tecido (kg)</label><input class="bb_peso" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="0.01" value="${b.peso}"></div>
+          <div class="field"><label>Peso ribana (kg)</label><input class="bb_pesoRibana" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="0.01" value="${b.pesoRibana}"></div>
         </div>
         <div class="row2">
-          <div class="field"><label>Peso da ribana (kg)</label><input class="ln_pesoRibana" data-i="${i}" type="number" min="0" step="0.01" value="${l.pesoRibana}"></div>
-          <div class="field"><label>Preço ribana (R$/kg)</label><input class="ln_precoRibana" data-i="${i}" type="number" min="0" step="0.01" value="${l.precoRibana}"></div>
+          <div class="field"><label>Meta rendimento (peças)</label><input class="bb_metaRendimento" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="1" value="${b.metaRendimento}"></div>
+          <div class="field"><label>Valor unit. cortador (R$)</label><input class="bb_valorUnit" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="0.01" value="${b.valorUnit}"></div>
         </div>
-        <div class="row2">
-          <div class="field"><label>Número do pedido</label><input class="ln_numeroLote" data-i="${i}" value="${escapeHtml(l.numeroLote)}" placeholder="Ex: 2026-0714"></div>
-          <div class="field"><label>Meta rendimento (peças/bobina)</label><input class="ln_metaRendimento" data-i="${i}" type="number" min="0" step="1" value="${l.metaRendimento}"></div>
+        <div class="field" style="margin-bottom:4px;"><label>Tamanhos solicitados</label></div>
+        <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr);">
+          ${tams.map(t=>`<div class="tamcheck"><label style="margin:0; text-transform:none;">${t}</label><input type="checkbox" class="bb_tam" data-ci="${ci}" data-bi="${bi}" data-t="${t}" ${b.tamanhos[t]?'checked':''}></div>`).join('')}
         </div>
-        <div class="field"><label>Tamanhos solicitados</label></div>
-        <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr); margin-bottom:10px;">
-          ${tams.map(t=>`<div class="tamcheck"><label style="margin:0; text-transform:none;">${t}</label><input type="checkbox" class="ln_tam" data-i="${i}" data-t="${t}" ${l.tamanhos[t]?'checked':''}></div>`).join('')}
-        </div>
-        <div class="field"><label>Valor unitário pago ao cortador (R$)</label><input class="ln_valorUnit" data-i="${i}" type="number" min="0" step="0.01" value="${l.valorUnit}"></div>
       </div>`;
     }).join('');
 
-    cont.querySelectorAll('.ln_tam').forEach(el=>{
-      el.onchange = ()=>{ linhas[Number(el.dataset.i)].tamanhos[el.dataset.t] = el.checked; };
-    });
-    cont.querySelectorAll('.ln_fornecedor').forEach(el=>{
+    bobCont.querySelectorAll('.bb_tam').forEach(el=>{
       el.onchange = ()=>{
-        const i = Number(el.dataset.i);
-        linhas[i].fornecedor = el.value;
-        const opt = el.selectedOptions[0];
-        linhas[i].precoTecido = Number(opt.dataset.precoTec)||0;
-        linhas[i].precoRibana = Number(opt.dataset.precoRib)||0;
-        renderLinhas();
+        cores[Number(el.dataset.ci)].bobinas[Number(el.dataset.bi)].tamanhos[el.dataset.t] = el.checked;
       };
     });
-    cont.querySelectorAll('.ln_sistema').forEach(el=>{
-      el.onchange = ()=>{ const i = Number(el.dataset.i); linhas[i].sistemaTamanho = el.value; linhas[i].tamanhos={}; renderLinhas(); };
-    });
-    cont.querySelectorAll('input.ln_produto, input.ln_cor, input.ln_peso, input.ln_precoTecido, input.ln_pesoRibana, input.ln_precoRibana, input.ln_numeroLote, input.ln_metaRendimento, input.ln_valorUnit').forEach(el=>{
-      const campo = el.className.replace('ln_','');
+    bobCont.querySelectorAll('.bb_sistema').forEach(el=>{
       el.onchange = ()=>{
-        const i = Number(el.dataset.i);
-        linhas[i][campo] = el.type==='number' ? (Number(el.value)||0) : el.value;
+        const ci = Number(el.dataset.ci), bi = Number(el.dataset.bi);
+        cores[ci].bobinas[bi].sistemaTamanho = el.value;
+        cores[ci].bobinas[bi].tamanhos = {};
+        renderBobinas(ci);
       };
     });
-    cont.querySelectorAll('[data-remove]').forEach(btn=>{
-      btn.onclick = ()=>{ linhas.splice(Number(btn.dataset.remove),1); renderLinhas(); };
+    bobCont.querySelectorAll('.bb_produto, .bb_peso, .bb_pesoRibana, .bb_metaRendimento, .bb_valorUnit').forEach(el=>{
+      const campo = el.className.replace('bb_','');
+      el.onchange = ()=>{
+        const ci = Number(el.dataset.ci), bi = Number(el.dataset.bi);
+        cores[ci].bobinas[bi][campo] = el.type==='number' ? (Number(el.value)||0) : el.value;
+      };
+    });
+    bobCont.querySelectorAll('[data-rm-bobina]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const [ci,bi] = btn.dataset.rmBobina.split(':').map(Number);
+        cores[ci].bobinas.splice(bi,1);
+        renderBobinas(ci);
+      };
     });
   }
 
@@ -3260,50 +3311,55 @@ function openCorteMultiploForm(){
       ${listaCortadores.map(c=>`<option value="${escapeHtml(c.nome)}">${escapeHtml(c.nome)}</option>`).join('')}
     </select></div>
     <div class="field"><label>Data do envio</label><input id="f_multiData" type="date" value="${todayStr()}"></div>
-    <div id="corteLinhasContainer"></div>
-    <button type="button" class="btn" id="btnAddLinha" style="width:100%; margin-bottom:14px;">+ Adicionar outra cor</button>
-    <div class="field hint">Cada cor vira um lote separado, com seu próprio código de rastreio — os dados que costumam repetir (produto, tamanhos, fornecedor, valor) já vêm preenchidos na próxima linha.</div>
+    <div id="corteCoresContainer"></div>
+    <button type="button" class="btn" id="btnAddCor" style="width:100%; margin-bottom:14px;">+ Adicionar outra cor</button>
+    <div class="field hint">Cada bobina vira um lote separado, com seu próprio código de rastreio. Cor, fornecedor e preço são preenchidos uma vez só por cor.</div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="saveMultiCorte">Salvar todos</button>
     </div>
   `);
-  renderLinhas();
-  document.getElementById('btnAddLinha').onclick = ()=>{ linhas.push(novaLinhaCorte(linhas[linhas.length-1])); renderLinhas(); };
+  renderCores();
+  document.getElementById('btnAddCor').onclick = ()=>{ cores.push(novaCor()); renderCores(); };
 
   document.getElementById('saveMultiCorte').onclick = async ()=>{
     const funcionario = document.getElementById('f_multiFunc').value;
     const dataEnvio = document.getElementById('f_multiData').value;
     if(!funcionario){ showToast('Escolha o cortador'); return; }
-    const validas = linhas.filter(l=>l.cor.trim() && l.produto.trim());
-    if(validas.length===0){ showToast('Preencha produto e cor em pelo menos uma linha'); return; }
-    validas.forEach(l=>{
-      const novoLote = {id:uid(), dataEnvio, etapa:'corte', funcionario, produto:l.produto.trim(), valorUnit:l.valorUnit,
-        quantidadeEnviada:0, quantidadeRetornada:null, dataRetorno:null, valorTotal:0,
-        quantidadeAproveitavel:null, quantidadeNaoAproveitavel:0, valorCredito:0, creditoAplicado:false,
-        paga:false, dataPagamento:null, status:'enviado', sistemaTamanho:l.sistemaTamanho};
-      novoLote.envioGrupoId = novoLote.id;
-      novoLote.cor = l.cor.trim();
-      novoLote.pesoBobinas = l.peso;
-      novoLote.pesoRibana = l.pesoRibana;
-      novoLote.fornecedorTecido = l.fornecedor;
-      novoLote.fornecedorRibana = l.fornecedor;
-      novoLote.numeroLoteFornecedor = l.numeroLote.trim();
-      novoLote.metaRendimentoBobina = l.metaRendimento;
-      novoLote.precoKgTecido = l.precoTecido;
-      novoLote.precoKgRibana = l.precoRibana;
-      novoLote.consumoTecidoPorPeca = null;
-      novoLote.consumoRibanaPorPeca = null;
-      novoLote.custoTecidoPorPeca = null;
-      novoLote.custoRibanaPorPeca = null;
-      novoLote.custoMateriaPrimaPorPeca = null;
-      const tamsL = l.sistemaTamanho==='infantil' ? TAMS_INFANTIL : TAMS_ADULTO;
-      novoLote.tamanhosSolicitados = {};
-      tamsL.forEach(t=>{ novoLote.tamanhosSolicitados[t] = !!l.tamanhos[t]; });
-      novoLote.codigoRevisao = proximoCodigoRevisao();
-      producao.push(novoLote);
+    let criados = 0;
+    cores.forEach(c=>{
+      if(!c.cor.trim()) return;
+      c.bobinas.forEach(b=>{
+        if(!b.produto.trim()) return;
+        const novoLote = {id:uid(), dataEnvio, etapa:'corte', funcionario, produto:b.produto.trim(), valorUnit:b.valorUnit,
+          quantidadeEnviada:0, quantidadeRetornada:null, dataRetorno:null, valorTotal:0,
+          quantidadeAproveitavel:null, quantidadeNaoAproveitavel:0, valorCredito:0, creditoAplicado:false,
+          paga:false, dataPagamento:null, status:'enviado', sistemaTamanho:b.sistemaTamanho};
+        novoLote.envioGrupoId = novoLote.id;
+        novoLote.cor = c.cor.trim();
+        novoLote.pesoBobinas = b.peso;
+        novoLote.pesoRibana = b.pesoRibana;
+        novoLote.fornecedorTecido = c.fornecedor;
+        novoLote.fornecedorRibana = c.fornecedor;
+        novoLote.numeroLoteFornecedor = c.numeroLote.trim();
+        novoLote.metaRendimentoBobina = b.metaRendimento;
+        novoLote.precoKgTecido = c.precoTecido;
+        novoLote.precoKgRibana = c.precoRibana;
+        novoLote.consumoTecidoPorPeca = null;
+        novoLote.consumoRibanaPorPeca = null;
+        novoLote.custoTecidoPorPeca = null;
+        novoLote.custoRibanaPorPeca = null;
+        novoLote.custoMateriaPrimaPorPeca = null;
+        const tamsB = b.sistemaTamanho==='infantil' ? TAMS_INFANTIL : TAMS_ADULTO;
+        novoLote.tamanhosSolicitados = {};
+        tamsB.forEach(t=>{ novoLote.tamanhosSolicitados[t] = !!b.tamanhos[t]; });
+        novoLote.codigoRevisao = proximoCodigoRevisao();
+        producao.push(novoLote);
+        criados++;
+      });
     });
-    await saveProducao(); closeModal(); render(); showToast(validas.length+' lote(s) de corte registrado(s)');
+    if(criados===0){ showToast('Preencha ao menos uma cor com produto na bobina'); return; }
+    await saveProducao(); closeModal(); render(); showToast(criados+' lote(s) de corte registrado(s)');
   };
 }
 
