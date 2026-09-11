@@ -3016,7 +3016,7 @@ function openProducaoForm(prefill){
           <div class="field"><label>Peso TOTAL tecido desta cor (kg)</label><input class="cr_pesoTotalTecido" data-ci="${ci}" type="number" min="0" step="0.01" value="${c.pesoTotalTecido}" placeholder="Ex: 72.5"></div>
           <div class="field"><label>Peso TOTAL ribana desta cor (kg)</label><input class="cr_pesoTotalRibana" data-ci="${ci}" type="number" min="0" step="0.01" value="${c.pesoTotalRibana}" placeholder="Ex: 8.6"></div>
         </div>
-        <div class="field hint">Informe o peso total da nota fiscal aqui, uma vez. O sistema mostra quanto já foi distribuído entre as bobinas — ou divide igual pra você com um clique. Cada bobina pode ser Adulto ou Infantil, à vontade.</div>
+        <div class="field hint">Isso é opcional, só pra conferência: informe aqui o peso total da nota fiscal dessa cor. Nas bobinas abaixo você mesmo decide quanto peso vai pra cada uma (de acordo com o seu plano de corte) — o sistema só soma o que você digitou e avisa se ainda falta ou se passou do total. "⚖️ Dividir igual" é um atalho pra quando as bobinas vão levar o mesmo peso; se não for o caso, ignore e preencha cada uma do seu jeito.</div>
         <div id="distribCor${ci}"></div>
         <div class="stitch"></div>
         <div id="bobinasCor${ci}"></div>
@@ -3147,8 +3147,8 @@ function openProducaoForm(prefill){
     if(totalTec<=0 && totalRib<=0){ el.innerHTML=''; return; }
     const corTec = Math.abs(sobraTec)<0.01 ? 'var(--revisao)' : (sobraTec<0 ? 'var(--perda)' : 'var(--corte)');
     const corRib = Math.abs(sobraRib)<0.01 ? 'var(--revisao)' : (sobraRib<0 ? 'var(--perda)' : 'var(--corte)');
-    el.innerHTML = `<div class="field hint" style="color:${corTec};">Tecido distribuído: ${distTec.toFixed(2)} de ${totalTec.toFixed(2)} kg ${Math.abs(sobraTec)<0.01?'✓ tudo distribuído':(sobraTec>0?'· faltam '+sobraTec.toFixed(2)+' kg':'· passou '+Math.abs(sobraTec).toFixed(2)+' kg do total')}</div>
-    ${totalRib>0?`<div class="field hint" style="color:${corRib};">Ribana distribuída: ${distRib.toFixed(2)} de ${totalRib.toFixed(2)} kg ${Math.abs(sobraRib)<0.01?'✓ tudo distribuído':(sobraRib>0?'· faltam '+sobraRib.toFixed(2)+' kg':'· passou '+Math.abs(sobraRib).toFixed(2)+' kg do total')}</div>`:''}`;
+    el.innerHTML = `<div class="field hint" style="color:${corTec};">Conferência tecido: você lançou ${distTec.toFixed(2)} kg nas bobinas abaixo, de ${totalTec.toFixed(2)} kg no total desta cor ${Math.abs(sobraTec)<0.01?'✓ bate certinho':(sobraTec>0?'· ainda restam '+sobraTec.toFixed(2)+' kg pra lançar em alguma bobina':'· você lançou '+Math.abs(sobraTec).toFixed(2)+' kg a mais do que o total informado')}</div>
+    ${totalRib>0?`<div class="field hint" style="color:${corRib};">Conferência ribana: você lançou ${distRib.toFixed(2)} kg nas bobinas abaixo, de ${totalRib.toFixed(2)} kg no total desta cor ${Math.abs(sobraRib)<0.01?'✓ bate certinho':(sobraRib>0?'· ainda restam '+sobraRib.toFixed(2)+' kg pra lançar em alguma bobina':'· você lançou '+Math.abs(sobraRib).toFixed(2)+' kg a mais do que o total informado')}</div>`:''}`;
   }
 
   function tamanhoInputsHtml(prefix){
