@@ -3002,7 +3002,9 @@ function openProducaoForm(prefill){
         <div class="field"><label>Tamanhos solicitados para o corte</label></div>
         <div class="row4" style="grid-template-columns:repeat(${Math.min(tamsAtivos().length,4)},1fr);">
           ${tamsAtivos().map(t=>`<div class="tamcheck"><label style="margin:0; text-transform:none;">${t}</label><input type="checkbox" class="f_tamSolic" value="${t}"></div>`).join('')}
-        </div>`;
+        </div>
+        <button type="button" class="btn" id="btnMultiploCorte" style="width:100%; margin-top:10px;">📦 Registrar várias cores de uma vez</button>`;
+      campoEtapaEnvio.querySelector('#btnMultiploCorte').onclick = ()=>{ closeModal(); openCorteMultiploForm(); };
       const fornSel = campoEtapaEnvio.querySelector('#f_fornecedor');
       fornSel.onchange = ()=>{
         const opt = fornSel.selectedOptions[0];
@@ -3153,6 +3155,155 @@ function openProducaoForm(prefill){
     }
     producao.push(novoLote);
     await saveProducao(); closeModal(); render(); showToast('Envio registrado');
+  };
+}
+
+function openCorteMultiploForm(){
+  if(config.length===0){
+    showToast('Cadastre um cortador na aba Config primeiro');
+    activeTab='config'; document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab==='config'));
+    render();
+    return;
+  }
+  const cortadores = config.filter(c=>c.etapa==='corte');
+  const listaCortadores = cortadores.length>0 ? cortadores : config;
+
+  function novaLinhaCorte(base){
+    return {
+      produto: base ? base.produto : '',
+      cor: '',
+      sistemaTamanho: base ? base.sistemaTamanho : 'adulto',
+      fornecedor: base ? base.fornecedor : '',
+      peso: 0, precoTecido: base ? base.precoTecido : 0,
+      pesoRibana: 0, precoRibana: base ? base.precoRibana : 0,
+      numeroLote: '', metaRendimento: base ? base.metaRendimento : 0,
+      tamanhos: {}, valorUnit: base ? base.valorUnit : 0
+    };
+  }
+  let linhas = [novaLinhaCorte()];
+
+  function renderLinhas(){
+    const cont = document.getElementById('corteLinhasContainer');
+    cont.innerHTML = linhas.map((l,i)=>{
+      const tams = l.sistemaTamanho==='infantil' ? TAMS_INFANTIL : TAMS_ADULTO;
+      return `<div class="card" style="margin-bottom:12px;">
+        <div class="item-top" style="margin-bottom:8px;">
+          <div class="item-title">Lote ${i+1}</div>
+          ${linhas.length>1?`<button type="button" class="btn btn-danger" data-remove="${i}">Remover</button>`:''}
+        </div>
+        <div class="row2">
+          <div class="field"><label>Produto</label><input class="ln_produto" data-i="${i}" value="${escapeHtml(l.produto)}" placeholder="Ex: Moletom Canguru"></div>
+          <div class="field"><label>Cor</label><input class="ln_cor" data-i="${i}" value="${escapeHtml(l.cor)}" placeholder="Ex: Preto"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Tamanhos</label><select class="ln_sistema" data-i="${i}">
+            <option value="adulto" ${l.sistemaTamanho==='adulto'?'selected':''}>Adulto (P, M, G, GG)</option>
+            <option value="infantil" ${l.sistemaTamanho==='infantil'?'selected':''}>Infantil (2 ao 16)</option>
+          </select></div>
+          <div class="field"><label>Fornecedor</label><select class="ln_fornecedor" data-i="${i}">
+            <option value="">Nenhum</option>
+            ${fornecedores.map(f=>`<option value="${escapeHtml(f.nome)}" data-preco-tec="${f.precoTecidoKg}" data-preco-rib="${f.precoRibanaKg}" ${l.fornecedor===f.nome?'selected':''}>${escapeHtml(f.nome)} (${escapeHtml(f.tipoTecido)})</option>`).join('')}
+          </select></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Peso do tecido (kg)</label><input class="ln_peso" data-i="${i}" type="number" min="0" step="0.01" value="${l.peso}"></div>
+          <div class="field"><label>Preço tecido (R$/kg)</label><input class="ln_precoTecido" data-i="${i}" type="number" min="0" step="0.01" value="${l.precoTecido}"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Peso da ribana (kg)</label><input class="ln_pesoRibana" data-i="${i}" type="number" min="0" step="0.01" value="${l.pesoRibana}"></div>
+          <div class="field"><label>Preço ribana (R$/kg)</label><input class="ln_precoRibana" data-i="${i}" type="number" min="0" step="0.01" value="${l.precoRibana}"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Número do pedido</label><input class="ln_numeroLote" data-i="${i}" value="${escapeHtml(l.numeroLote)}" placeholder="Ex: 2026-0714"></div>
+          <div class="field"><label>Meta rendimento (peças/bobina)</label><input class="ln_metaRendimento" data-i="${i}" type="number" min="0" step="1" value="${l.metaRendimento}"></div>
+        </div>
+        <div class="field"><label>Tamanhos solicitados</label></div>
+        <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr); margin-bottom:10px;">
+          ${tams.map(t=>`<div class="tamcheck"><label style="margin:0; text-transform:none;">${t}</label><input type="checkbox" class="ln_tam" data-i="${i}" data-t="${t}" ${l.tamanhos[t]?'checked':''}></div>`).join('')}
+        </div>
+        <div class="field"><label>Valor unitário pago ao cortador (R$)</label><input class="ln_valorUnit" data-i="${i}" type="number" min="0" step="0.01" value="${l.valorUnit}"></div>
+      </div>`;
+    }).join('');
+
+    cont.querySelectorAll('.ln_tam').forEach(el=>{
+      el.onchange = ()=>{ linhas[Number(el.dataset.i)].tamanhos[el.dataset.t] = el.checked; };
+    });
+    cont.querySelectorAll('.ln_fornecedor').forEach(el=>{
+      el.onchange = ()=>{
+        const i = Number(el.dataset.i);
+        linhas[i].fornecedor = el.value;
+        const opt = el.selectedOptions[0];
+        linhas[i].precoTecido = Number(opt.dataset.precoTec)||0;
+        linhas[i].precoRibana = Number(opt.dataset.precoRib)||0;
+        renderLinhas();
+      };
+    });
+    cont.querySelectorAll('.ln_sistema').forEach(el=>{
+      el.onchange = ()=>{ const i = Number(el.dataset.i); linhas[i].sistemaTamanho = el.value; linhas[i].tamanhos={}; renderLinhas(); };
+    });
+    cont.querySelectorAll('input.ln_produto, input.ln_cor, input.ln_peso, input.ln_precoTecido, input.ln_pesoRibana, input.ln_precoRibana, input.ln_numeroLote, input.ln_metaRendimento, input.ln_valorUnit').forEach(el=>{
+      const campo = el.className.replace('ln_','');
+      el.onchange = ()=>{
+        const i = Number(el.dataset.i);
+        linhas[i][campo] = el.type==='number' ? (Number(el.value)||0) : el.value;
+      };
+    });
+    cont.querySelectorAll('[data-remove]').forEach(btn=>{
+      btn.onclick = ()=>{ linhas.splice(Number(btn.dataset.remove),1); renderLinhas(); };
+    });
+  }
+
+  openModal(`
+    <h3>Registrar várias cores de corte</h3>
+    <div class="field"><label>Cortador</label><select id="f_multiFunc">
+      <option value="" disabled selected>Selecione...</option>
+      ${listaCortadores.map(c=>`<option value="${escapeHtml(c.nome)}">${escapeHtml(c.nome)}</option>`).join('')}
+    </select></div>
+    <div class="field"><label>Data do envio</label><input id="f_multiData" type="date" value="${todayStr()}"></div>
+    <div id="corteLinhasContainer"></div>
+    <button type="button" class="btn" id="btnAddLinha" style="width:100%; margin-bottom:14px;">+ Adicionar outra cor</button>
+    <div class="field hint">Cada cor vira um lote separado, com seu próprio código de rastreio — os dados que costumam repetir (produto, tamanhos, fornecedor, valor) já vêm preenchidos na próxima linha.</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="saveMultiCorte">Salvar todos</button>
+    </div>
+  `);
+  renderLinhas();
+  document.getElementById('btnAddLinha').onclick = ()=>{ linhas.push(novaLinhaCorte(linhas[linhas.length-1])); renderLinhas(); };
+
+  document.getElementById('saveMultiCorte').onclick = async ()=>{
+    const funcionario = document.getElementById('f_multiFunc').value;
+    const dataEnvio = document.getElementById('f_multiData').value;
+    if(!funcionario){ showToast('Escolha o cortador'); return; }
+    const validas = linhas.filter(l=>l.cor.trim() && l.produto.trim());
+    if(validas.length===0){ showToast('Preencha produto e cor em pelo menos uma linha'); return; }
+    validas.forEach(l=>{
+      const novoLote = {id:uid(), dataEnvio, etapa:'corte', funcionario, produto:l.produto.trim(), valorUnit:l.valorUnit,
+        quantidadeEnviada:0, quantidadeRetornada:null, dataRetorno:null, valorTotal:0,
+        quantidadeAproveitavel:null, quantidadeNaoAproveitavel:0, valorCredito:0, creditoAplicado:false,
+        paga:false, dataPagamento:null, status:'enviado', sistemaTamanho:l.sistemaTamanho};
+      novoLote.envioGrupoId = novoLote.id;
+      novoLote.cor = l.cor.trim();
+      novoLote.pesoBobinas = l.peso;
+      novoLote.pesoRibana = l.pesoRibana;
+      novoLote.fornecedorTecido = l.fornecedor;
+      novoLote.fornecedorRibana = l.fornecedor;
+      novoLote.numeroLoteFornecedor = l.numeroLote.trim();
+      novoLote.metaRendimentoBobina = l.metaRendimento;
+      novoLote.precoKgTecido = l.precoTecido;
+      novoLote.precoKgRibana = l.precoRibana;
+      novoLote.consumoTecidoPorPeca = null;
+      novoLote.consumoRibanaPorPeca = null;
+      novoLote.custoTecidoPorPeca = null;
+      novoLote.custoRibanaPorPeca = null;
+      novoLote.custoMateriaPrimaPorPeca = null;
+      const tamsL = l.sistemaTamanho==='infantil' ? TAMS_INFANTIL : TAMS_ADULTO;
+      novoLote.tamanhosSolicitados = {};
+      tamsL.forEach(t=>{ novoLote.tamanhosSolicitados[t] = !!l.tamanhos[t]; });
+      novoLote.codigoRevisao = proximoCodigoRevisao();
+      producao.push(novoLote);
+    });
+    await saveProducao(); closeModal(); render(); showToast(validas.length+' lote(s) de corte registrado(s)');
   };
 }
 
