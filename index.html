@@ -3004,7 +3004,28 @@ function openProducaoForm(prefill){
           ${tamsAtivos().map(t=>`<div class="tamcheck"><label style="margin:0; text-transform:none;">${t}</label><input type="checkbox" class="f_tamSolic" value="${t}"></div>`).join('')}
         </div>
         <button type="button" class="btn" id="btnMultiploCorte" style="width:100%; margin-top:10px;">📦 Registrar várias cores de uma vez</button>`;
-      campoEtapaEnvio.querySelector('#btnMultiploCorte').onclick = ()=>{ closeModal(); openCorteMultiploForm(); };
+      campoEtapaEnvio.querySelector('#btnMultiploCorte').onclick = ()=>{
+        const tamanhosAtuais = {};
+        campoEtapaEnvio.querySelectorAll('.f_tamSolic').forEach(chk=>{ if(chk.checked) tamanhosAtuais[chk.value] = true; });
+        const prefillMulti = {
+          funcionario: funcSelect.value,
+          dataEnvio: document.getElementById('f_data').value,
+          cor: document.getElementById('f_cor').value,
+          produto: prodInput.value,
+          fornecedor: document.getElementById('f_fornecedor').value,
+          peso: Number(document.getElementById('f_peso').value)||0,
+          precoTecido: Number(document.getElementById('f_precoTecido').value)||0,
+          pesoRibana: Number(document.getElementById('f_pesoRibana').value)||0,
+          precoRibana: Number(document.getElementById('f_precoRibana').value)||0,
+          numeroLote: document.getElementById('f_numeroLote').value,
+          metaRendimento: Number(document.getElementById('f_metaRendimento').value)||0,
+          sistemaTamanho: sistemaTamSelect.value,
+          tamanhos: tamanhosAtuais,
+          valorUnit: Number(valInput.value)||0
+        };
+        closeModal();
+        openCorteMultiploForm(prefillMulti);
+      };
       const fornSel = campoEtapaEnvio.querySelector('#f_fornecedor');
       fornSel.onchange = ()=>{
         const opt = fornSel.selectedOptions[0];
@@ -3158,7 +3179,7 @@ function openProducaoForm(prefill){
   };
 }
 
-function openCorteMultiploForm(){
+function openCorteMultiploForm(prefill){
   if(config.length===0){
     showToast('Cadastre um cortador na aba Config primeiro');
     activeTab='config'; document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab==='config'));
@@ -3181,6 +3202,22 @@ function openCorteMultiploForm(){
     return { cor: '', fornecedor: '', precoTecido: 0, precoRibana: 0, numeroLote: '', pesoTotalTecido: 0, pesoTotalRibana: 0, bobinas: [novaBobina()] };
   }
   let cores = [novaCor()];
+  if(prefill){
+    const c0 = cores[0];
+    c0.cor = prefill.cor || '';
+    c0.fornecedor = prefill.fornecedor || '';
+    c0.precoTecido = prefill.precoTecido || 0;
+    c0.precoRibana = prefill.precoRibana || 0;
+    c0.numeroLote = prefill.numeroLote || '';
+    const b0 = c0.bobinas[0];
+    b0.produto = prefill.produto || '';
+    b0.sistemaTamanho = prefill.sistemaTamanho || 'adulto';
+    b0.peso = prefill.peso || 0;
+    b0.pesoRibana = prefill.pesoRibana || 0;
+    b0.metaRendimento = prefill.metaRendimento || 0;
+    b0.valorUnit = prefill.valorUnit || 0;
+    b0.tamanhos = prefill.tamanhos ? {...prefill.tamanhos} : {};
+  }
 
   function renderCores(){
     const cont = document.getElementById('corteCoresContainer');
@@ -3348,10 +3385,10 @@ function openCorteMultiploForm(){
   openModal(`
     <h3>Registrar várias cores de corte</h3>
     <div class="field"><label>Cortador</label><select id="f_multiFunc">
-      <option value="" disabled selected>Selecione...</option>
-      ${listaCortadores.map(c=>`<option value="${escapeHtml(c.nome)}">${escapeHtml(c.nome)}</option>`).join('')}
+      <option value="" ${prefill&&prefill.funcionario?'':'disabled selected'}>Selecione...</option>
+      ${listaCortadores.map(c=>`<option value="${escapeHtml(c.nome)}" ${prefill&&prefill.funcionario===c.nome?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}
     </select></div>
-    <div class="field"><label>Data do envio</label><input id="f_multiData" type="date" value="${todayStr()}"></div>
+    <div class="field"><label>Data do envio</label><input id="f_multiData" type="date" value="${(prefill&&prefill.dataEnvio)||todayStr()}"></div>
     <div id="corteCoresContainer"></div>
     <button type="button" class="btn" id="btnAddCor" style="width:100%; margin-bottom:14px;">+ Adicionar outra cor</button>
     <div class="field hint">Cada bobina vira um lote separado, com seu próprio código de rastreio. Cor, fornecedor e preço são preenchidos uma vez só por cor.</div>
