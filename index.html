@@ -1304,66 +1304,132 @@ function buildChartSvg(base){
 }
 
 let producaoBusca = '';
+let producaoFiltroCostureira = 'todas';
+let producaoFiltroStatus = 'todos';
 function renderProducao(){
-  // agrupa por envio original (envioGrupoId), assim retiradas parciais do mesmo envio ficam num só card
-  const grupos = {};
+  // agrupa tudo pelo código de rastreio: corte e a(s) costura(s) vinculada(s) a ele viram um card só
+  const porCodigo = {};
+  const semCodigo = [];
   producao.forEach(p=>{
-    const key = p.envioGrupoId || p.id;
-    if(!grupos[key]) grupos[key] = [];
-    grupos[key].push(p);
+    if(!p.codigoRevisao){ semCodigo.push(p); return; }
+    if(!porCodigo[p.codigoRevisao]) porCodigo[p.codigoRevisao] = [];
+    porCodigo[p.codigoRevisao].push(p);
   });
-  const grupoConcluido = g => g.every(p=>p.paga && p.status!=='enviado');
 
-  let listaGrupos = Object.values(grupos);
-  listaGrupos = producaoFiltro==='ativos' ? listaGrupos.filter(g=>!grupoConcluido(g)) : listaGrupos.filter(g=>grupoConcluido(g));
+  const agrupaPorEnvio = lista => {
+    const g = {};
+    lista.forEach(p=>{ const k = p.envioGrupoId || p.id; if(!g[k]) g[k]=[]; g[k].push(p); });
+    return Object.values(g);
+  };
+
+  let cartoes = Object.entries(porCodigo).map(([codigo, itens])=>{
+    const corteItens = itens.filter(p=>p.etapa==='corte');
+    const costuraGrupos = agrupaPorEnvio(itens.filter(p=>p.etapa==='costura'));
+    const dataRef = itens.reduce((max,p)=> (p.dataEnvio>max?p.dataEnvio:max), itens[0].dataEnvio);
+    return {codigo, corteItens, costuraGrupos, itens, dataRef};
+  });
+  // registros antigos sem código (não deveria acontecer, mas por segurança viram card avulso)
+  agrupaPorEnvio(semCodigo).forEach(g=>{
+    cartoes.push({codigo:null, corteItens: g[0].etapa==='corte'?g:[], costuraGrupos: g[0].etapa==='costura'?[g]:[], itens:g, dataRef:g[0].dataEnvio});
+  });
+
+  const cardConcluido = c => c.itens.every(p=>p.paga && p.status!=='enviado');
+
+  const statusCard = c => {
+    if(c.corteItens.some(p=>p.status==='enviado')) return 'em_corte';
+    if(c.costuraGrupos.some(g=>g.some(p=>p.status==='enviado'))) return 'em_costura';
+    if(c.costuraGrupos.some(g=>g.some(p=>p.status==='retornado'))) return 'aguardando_revisao';
+    if(c.corteItens.length>0 && c.costuraGrupos.length===0) return 'aguardando_costura';
+    return 'concluido';
+  };
+  const STATUS_CARD_LABEL = {em_corte:'Em corte', em_costura:'Em costura', aguardando_revisao:'Aguard. revisão', aguardando_costura:'Aguard. envio p/ costura', concluido:'Concluído'};
+  const STATUS_CARD_TAG = {em_corte:'corte', em_costura:'costura', aguardando_revisao:'retornado', aguardando_costura:'corte', concluido:'revisado'};
+
+  const costureirasDisponiveis = [...new Set(producao.filter(p=>p.etapa==='costura' && p.funcionario).map(p=>p.funcionario))].sort();
+
+  let lista = cartoes;
+  lista = producaoFiltro==='ativos' ? lista.filter(c=>!cardConcluido(c)) : lista.filter(c=>cardConcluido(c));
 
   let html = `<div class="filter-row">
     <button class="btn-toggle ${producaoFiltro==='ativos'?'active':''}" id="btnFiltroAtivos">Em produção</button>
     <button class="btn-toggle ${producaoFiltro==='concluidos'?'active':''}" id="btnFiltroConcluidos">Concluídos</button>
     <button class="btn" id="btnRetornoCostureira" style="margin-left:auto;">📊 Retorno por Costureira</button>
   </div>`;
-  html += `<div class="field"><input id="producao_busca" placeholder="Buscar por código ou costureira..." value="${escapeHtml(producaoBusca)}"></div>`;
+  html += `<div class="filter-row">
+    <select id="producao_filtro_costureira"><option value="todas">Todas as costureiras</option>${costureirasDisponiveis.map(f=>`<option value="${escapeHtml(f)}" ${producaoFiltroCostureira===f?'selected':''}>${escapeHtml(f)}</option>`).join('')}</select>
+    ${producaoFiltro==='ativos' ? `<select id="producao_filtro_status">
+      <option value="todos" ${producaoFiltroStatus==='todos'?'selected':''}>Todos os status</option>
+      <option value="em_corte" ${producaoFiltroStatus==='em_corte'?'selected':''}>Em corte</option>
+      <option value="aguardando_costura" ${producaoFiltroStatus==='aguardando_costura'?'selected':''}>Aguard. envio p/ costura</option>
+      <option value="em_costura" ${producaoFiltroStatus==='em_costura'?'selected':''}>Em costura</option>
+      <option value="aguardando_revisao" ${producaoFiltroStatus==='aguardando_revisao'?'selected':''}>Aguard. revisão</option>
+    </select>` : ''}
+  </div>`;
+  html += `<div class="field"><input id="producao_busca" placeholder="Buscar por código, produto ou costureira..." value="${escapeHtml(producaoBusca)}"></div>`;
 
+  if(producaoFiltroCostureira!=='todas'){
+    lista = lista.filter(c=>c.costuraGrupos.some(g=>g[0].funcionario===producaoFiltroCostureira));
+  }
+  if(producaoFiltro==='ativos' && producaoFiltroStatus!=='todos'){
+    lista = lista.filter(c=>statusCard(c)===producaoFiltroStatus);
+  }
   if(producaoBusca.trim()){
     const q = normalizeTxt(producaoBusca);
-    listaGrupos = listaGrupos.filter(g=>{
-      const head = g[0];
-      return normalizeTxt(head.codigoRevisao||'').includes(q) || normalizeTxt(head.funcionario||'').includes(q);
+    lista = lista.filter(c=>{
+      const corte = c.corteItens[0];
+      const produto = corte ? corte.produto : (c.costuraGrupos[0] ? c.costuraGrupos[0][0].produto : '');
+      const cor = corte ? corte.cor : '';
+      const costureiras = c.costuraGrupos.map(g=>g[0].funcionario).join(' ');
+      return normalizeTxt(c.codigo||'').includes(q) || normalizeTxt(produto||'').includes(q) || normalizeTxt(cor||'').includes(q) || normalizeTxt(costureiras).includes(q);
     });
   }
-  listaGrupos.sort((a,b)=> b[0].dataEnvio.localeCompare(a[0].dataEnvio));
 
-  if(listaGrupos.length===0){
-    html += `<div class="empty">${producaoBusca.trim()?'Nenhum resultado com esse filtro.':'Nenhum lote nesta lista.'}</div>`;
+  lista.sort((a,b)=> b.dataRef.localeCompare(a.dataRef));
+
+  if(lista.length===0){
+    const filtroAtivo = producaoBusca.trim() || producaoFiltroCostureira!=='todas' || producaoFiltroStatus!=='todos';
+    html += `<div class="empty">${filtroAtivo?'Nenhum resultado com esse filtro.':'Nenhum lote nesta lista.'}</div>`;
     return html;
   }
-  html += `<div class="card">`;
-  listaGrupos.forEach(g=>{
-    const head = g[0];
-    const isCorte = head.etapa==='corte';
-    const pendente = g.find(p=>p.status==='enviado');
-    const finalizados = g.filter(p=>p.status!=='enviado').sort((a,b)=> (a.dataRetorno||'').localeCompare(b.dataRetorno||''));
-    const statusGeral = pendente ? 'enviado' : (finalizados.length>0 && finalizados.every(p=>p.status==='revisado') ? 'revisado' : 'retornado');
 
-    const loteOrigem = !isCorte && head.loteCorteOrigemId ? producao.find(x=>x.id===head.loteCorteOrigemId) : null;
-    const corCostura = loteOrigem ? loteOrigem.cor : null;
+  html += `<div class="card">`;
+  lista.forEach(c=>{
+    const corte = c.corteItens[0] || null;
+    const primeiraCostura = c.costuraGrupos[0] ? c.costuraGrupos[0][0] : null;
+    const loteOrigemCor = !corte && primeiraCostura && primeiraCostura.loteCorteOrigemId ? producao.find(x=>x.id===primeiraCostura.loteCorteOrigemId) : null;
+    const produtoTitulo = corte ? corte.produto : (primeiraCostura ? primeiraCostura.produto : '-');
+    const corTitulo = corte ? corte.cor : (loteOrigemCor ? loteOrigemCor.cor : null);
+    const sc = statusCard(c);
 
     html += `<div class="item">
       <div class="item-top">
         <div>
-          <div class="item-title">${head.codigoRevisao?`<span class="mono" style="color:var(--accent);">${escapeHtml(head.codigoRevisao)}</span> · `:''}${escapeHtml(head.produto)}${isCorte?(' · '+escapeHtml(head.cor||'-')):(corCostura?(' · '+escapeHtml(corCostura)):'')}</div>
-          <div class="item-sub">${escapeHtml(head.funcionario)} · enviado ${fmtDateBR(head.dataEnvio)}${isCorte&&head.pesoBobinas?(' · '+head.pesoBobinas+' kg'):''}</div>
+          <div class="item-title">${c.codigo?`<span class="mono" style="color:var(--accent);">${escapeHtml(c.codigo)}</span> · `:''}${escapeHtml(produtoTitulo)}${corTitulo?(' · '+escapeHtml(corTitulo)):''}</div>
         </div>
-        <div class="item-right">
-          <span class="tag tag-${head.etapa}">${STAGE_LABEL[head.etapa]}</span><br>
-          <span class="tag tag-${statusGeral}" style="margin-top:4px;">${STATUS_LABEL[statusGeral]}</span>
-        </div>
+        <div class="item-right"><span class="tag tag-${STATUS_CARD_TAG[sc]}">${STATUS_CARD_LABEL[sc]}</span></div>
       </div>`;
 
-    if(isCorte){
-      // corte nunca é dividido em retiradas parciais: card único, igual antes
-      const p = head;
+    // resumo rápido — bate o olho e vê onde está cada etapa
+    if(corte){
+      const abertoCorte = corte.status==='enviado';
+      const linhaCorte = abertoCorte
+        ? `Corte: ${corte.pesoBobinas?corte.pesoBobinas+' kg':'-'} enviados (aguardando retorno)`
+        : `Corte: retornou ${corte.quantidadeRetornada||0} pç${Number(corte.metaRendimentoBobina)>0?(' (meta '+corte.metaRendimentoBobina+')'):''}`;
+      html += `<div class="item-note" style="font-weight:600;">${linhaCorte}${abertoCorte?' <span class="tag tag-corte">em aberto</span>':''}</div>`;
+    }
+    c.costuraGrupos.forEach(g=>{
+      const func = g[0].funcionario;
+      const totalEnv = Number(g[0].quantidadeEnviadaOriginal || g[0].quantidadeEnviada || 0);
+      const totalRet = g.filter(p=>p.status!=='enviado').reduce((s,p)=>s+Number(p.quantidadeRetornada||0),0);
+      const aberto = g.some(p=>p.status==='enviado');
+      html += `<div class="item-note" style="font-weight:600;">Costura (${escapeHtml(func)}): enviado ${totalEnv} → retornado ${totalRet} pç${aberto?' <span class="tag tag-costura">em aberto</span>':''}</div>`;
+    });
+
+    // detalhes completos do corte
+    if(corte){
+      const p = corte;
       const tamsP = tamsDoLote(p);
+      html += `<div class="item-note" style="color:var(--text-dim);">${escapeHtml(p.funcionario||'-')} · enviado ${fmtDateBR(p.dataEnvio)}${p.numeroLoteFornecedor?(' · pedido '+escapeHtml(p.numeroLoteFornecedor)):''}</div>`;
       if(p.tamanhosSolicitados){
         const ts = p.tamanhosSolicitados;
         const pedidos = tamsP.filter(t=>ts[t]).join(', ');
@@ -1392,12 +1458,19 @@ function renderProducao(){
       if(p.paga) html += `<button class="btn" data-action="desfazerPagamento" data-id="${p.id}">Desfazer pagamento</button>`;
       html += `<button class="btn btn-danger" data-action="delProducao" data-id="${p.id}" style="margin-left:auto;">Excluir</button>`;
       html += `</div>`;
-    }else{
-      // costura: mostra o que ainda falta retirar (se houver) e o histórico de retiradas já feitas deste envio
+    }
+
+    // detalhes completos de cada envio de costura
+    c.costuraGrupos.forEach(g=>{
+      const head = g[0];
+      const pendente = g.find(p=>p.status==='enviado');
+      const finalizados = g.filter(p=>p.status!=='enviado').sort((a,b)=> (a.dataRetorno||'').localeCompare(b.dataRetorno||''));
       const tamsHead = tamsDoLote(head);
       const totalEnviadoOriginal = Number(head.quantidadeEnviadaOriginal || head.quantidadeEnviada || 0);
       const totalRetornadoGrupo = finalizados.reduce((s,f)=>s+Number(f.quantidadeRetornada||0),0);
       const totalPendenteGrupo = pendente ? Number(pendente.quantidadeEnviada||0) : 0;
+
+      html += `<div class="item-note" style="margin-top:8px; font-weight:600; color:var(--text-dim);">🧵 ${escapeHtml(head.funcionario)} · enviado ${fmtDateBR(head.dataEnvio)}</div>`;
       html += `<div class="item-note" style="display:flex; gap:16px; font-weight:600; color:var(--text); flex-wrap:wrap;">
         <span>Enviado: ${totalEnviadoOriginal}</span>
         <span style="color:var(--retornado)">Retornado: ${totalRetornadoGrupo}</span>
@@ -1437,7 +1510,7 @@ function renderProducao(){
         const revisadoTag = f.status==='revisado' ? `<span class="tag tag-revisado">Revisado</span>` : `<span class="tag tag-retornado">Aguard. revisão</span>`;
         html += `<div class="subitem">
           <div class="subitem-label" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
-            <span>${f.codigoRevisao?`<span class="mono" style="color:var(--accent);">${escapeHtml(f.codigoRevisao)}</span> · `:''}Retirada de ${fmtDateBR(f.dataRetorno)}</span>
+            <span>Retirada de ${fmtDateBR(f.dataRetorno)}</span>
             <span>${pagoTag} ${revisadoTag}</span>
           </div>
           <div class="subitem-row">${f.quantidadeRetornada||0} peça(s)${tamStr?(' · '+tamStr):''} · ${fmtMoney(f.valorTotal)}${f.paga?(' · pago em '+fmtDateBR(f.dataPagamento)):''}</div>
@@ -1451,12 +1524,14 @@ function renderProducao(){
           </div>
         </div>`;
       });
-    }
+    });
+
     html += `</div>`;
   });
   html += `</div>`;
   return html;
 }
+
 
 let revisaoBusca = '';
 function renderRevisao(){
@@ -2823,6 +2898,10 @@ function attachDynamicHandlers(){
     producaoBuscaInput.onchange = ()=>{ producaoBusca = producaoBuscaInput.value; render(); };
     producaoBuscaInput.onkeydown = (e)=>{ if(e.key==='Enter') producaoBuscaInput.blur(); };
   }
+  const producaoFiltroCostureiraSel = document.getElementById('producao_filtro_costureira');
+  if(producaoFiltroCostureiraSel) producaoFiltroCostureiraSel.onchange = ()=>{ producaoFiltroCostureira = producaoFiltroCostureiraSel.value; render(); };
+  const producaoFiltroStatusSel = document.getElementById('producao_filtro_status');
+  if(producaoFiltroStatusSel) producaoFiltroStatusSel.onchange = ()=>{ producaoFiltroStatus = producaoFiltroStatusSel.value; render(); };
 }
 
 function buildResumoMensal(){
