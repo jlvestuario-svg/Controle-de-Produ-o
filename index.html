@@ -1369,6 +1369,9 @@ function renderProducao(){
         const pedidos = tamsP.filter(t=>ts[t]).join(', ');
         html += `<div class="item-note">Tamanhos pedidos: ${pedidos||'-'}</div>`;
       }
+      if(p.status==='enviado' && Number(p.metaRendimentoBobina)>0){
+        html += `<div class="item-note">Meta: ${p.metaRendimentoBobina} pç</div>`;
+      }
       if(p.tamanhosCortados){
         const tc = p.tamanhosCortados;
         const rendeuStr = tamsP.map(t=>t+' '+(tc[t]||0)).join(' · ');
