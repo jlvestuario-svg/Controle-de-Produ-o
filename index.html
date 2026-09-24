@@ -1387,6 +1387,7 @@ function renderProducao(){
       }
       html += `<div class="item-actions">`;
       if(p.status==='enviado') html += `<button class="btn btn-primary" data-action="registrarRetorno" data-id="${p.id}">Registrar retorno</button>`;
+      if(p.status==='retornado') html += `<button class="btn btn-primary" data-action="enviarParaCostureira" data-id="${p.id}">Enviar p/ costureira</button>`;
       html += `<button class="btn" data-action="editarLote" data-id="${p.id}">Editar</button>`;
       if(p.paga) html += `<button class="btn" data-action="desfazerPagamento" data-id="${p.id}">Desfazer pagamento</button>`;
       html += `<button class="btn btn-danger" data-action="delProducao" data-id="${p.id}" style="margin-left:auto;">Excluir</button>`;
@@ -2713,6 +2714,15 @@ function attachDynamicHandlers(){
         openEditarRevisaoForm(id);
       }else if(action==='editarLote'){
         openEditarLoteForm(id);
+      }else if(action==='enviarParaCostureira'){
+        const p = producao.find(x=>x.id===id);
+        const tam = p.tamanhosCortados || p.tamanhosSolicitados || {};
+        openProducaoForm({
+          produto: p.produto,
+          sistemaTamanho: p.sistemaTamanho,
+          tamanhos: tam,
+          loteCorteOrigemId: p.id
+        });
       }else if(action==='desfazerPagamento'){
         const p = producao.find(x=>x.id===id);
         p.paga = false; p.dataPagamento = null;
