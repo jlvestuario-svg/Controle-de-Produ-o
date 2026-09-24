@@ -1524,7 +1524,7 @@ function renderRevisao(){
           </div>
           <div class="item-right">${p.quantidadeAproveitavel}/${p.quantidadeRetornada} aproveitáveis</div>
         </div>
-        ${p.quantidadeNaoAproveitavel>0 ? `<div class="item-note" style="color:var(--perda)">${p.quantidadeNaoAproveitavel} peça(s) descartada(s)${p.pesoDescartado?(' · '+p.pesoDescartado+' kg'):''} · Prejuízo total: ${fmtMoney(p.valorPrejuizoTotal||0)}</div>` : ''}
+        ${p.quantidadeNaoAproveitavel>0 ? `<div class="item-note" style="color:var(--perda)">${p.quantidadeNaoAproveitavel} peça(s) descartada(s)${p.pesoDescartado?(' · '+p.pesoDescartado+' kg · Prejuízo total: '+fmtMoney(p.valorPrejuizoTotal||0)):' · peso ainda não informado (toque em Editar pra completar)'}</div>` : ''}
         <div class="item-actions">
           <button class="btn" data-action="editarRevisao" data-id="${p.id}">Editar</button>
           <button class="btn btn-danger" data-action="delProducao" data-id="${p.id}" style="margin-left:auto;">Excluir</button>
@@ -3697,10 +3697,9 @@ function openRevisaoForm(loteId){
   const tamStr = tamsP.filter(t=>Number(tr[t])>0).map(t=>t+' '+tr[t]).join(' · ');
   openModal(`
     <h3>${p.codigoRevisao?escapeHtml(p.codigoRevisao)+' · ':''}${escapeHtml(p.produto)}${cor?(' · '+escapeHtml(cor)):''}</h3>
-    <div class="field hint">Retornaram ${p.quantidadeRetornada} peças${tamStr?(' ('+tamStr+')'):''} de ${escapeHtml(p.funcionario)} em ${fmtDateBR(p.dataRetorno)}. Informe quantas podem ser aproveitadas.</div>
+    <div class="field hint">Retornaram ${p.quantidadeRetornada} peças${tamStr?(' ('+tamStr+')'):''} de ${escapeHtml(p.funcionario)} em ${fmtDateBR(p.dataRetorno)}. Quantas prestaram?</div>
     <div class="field"><label>Peças aproveitáveis</label><input id="f_aprov" type="number" min="0" max="${p.quantidadeRetornada}" value="${p.quantidadeRetornada}"></div>
-    <div class="field"><label>Peso total das peças descartadas (kg)</label><input id="f_pesoDescartado" type="number" min="0" step="0.01" value="0"></div>
-    <div class="field hint">Pesa todas as peças descartadas juntas, sem precisar pesar uma por uma. O sistema calcula sozinho o tecido, a ribana e o custo total perdido.</div>
+    <div class="field"><label>Peso das peças descartadas (kg) — opcional, pode completar depois</label><input id="f_pesoDescartado" type="number" min="0" step="0.01" value="0"></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="saveRevisao">Salvar</button>
@@ -3710,7 +3709,6 @@ function openRevisaoForm(loteId){
     const aprov = Number(document.getElementById('f_aprov').value);
     const naoAprov = Math.max(0, p.quantidadeRetornada - aprov);
     const pesoDescartado = Number(document.getElementById('f_pesoDescartado').value)||0;
-    if(naoAprov>0 && pesoDescartado<=0){ showToast('Informe o peso total das peças descartadas'); return; }
     p.quantidadeAproveitavel = aprov;
     p.quantidadeNaoAproveitavel = naoAprov;
     p.valorCredito = naoAprov * Number(p.valorUnit||0);
@@ -3746,7 +3744,7 @@ function openEditarRevisaoForm(loteId){
     <div class="field"><label>Produto</label><input id="f_editRevProd" value="${escapeHtml(p.produto)}"></div>
     <div class="field hint">Retornaram ${p.quantidadeRetornada} peças${tamStr?(' ('+tamStr+')'):''} de ${escapeHtml(p.funcionario)} em ${fmtDateBR(p.dataRetorno)}.</div>
     <div class="field"><label>Peças aproveitáveis</label><input id="f_aprov" type="number" min="0" max="${p.quantidadeRetornada}" value="${p.quantidadeAproveitavel}"></div>
-    <div class="field"><label>Peso total das peças descartadas (kg)</label><input id="f_pesoDescartado" type="number" min="0" step="0.01" value="${p.pesoDescartado||0}"></div>
+    <div class="field"><label>Peso das peças descartadas (kg) — opcional</label><input id="f_pesoDescartado" type="number" min="0" step="0.01" value="${p.pesoDescartado||0}"></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="saveEditarRevisao">Salvar</button>
@@ -3757,7 +3755,6 @@ function openEditarRevisaoForm(loteId){
     const aprov = Number(document.getElementById('f_aprov').value);
     const naoAprov = Math.max(0, p.quantidadeRetornada - aprov);
     const pesoDescartado = Number(document.getElementById('f_pesoDescartado').value)||0;
-    if(naoAprov>0 && pesoDescartado<=0){ showToast('Informe o peso total das peças descartadas'); return; }
     if(novoProduto) p.produto = novoProduto;
     p.quantidadeAproveitavel = aprov;
     p.quantidadeNaoAproveitavel = naoAprov;
