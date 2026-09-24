@@ -2986,7 +2986,7 @@ function openProducaoForm(prefill){
     };
   }
   function novaCor(){
-    return { cor: '', fornecedor: '', precoTecido: 0, precoRibana: 0, numeroLote: '', pesoTotalTecido: 0, pesoTotalRibana: 0, bobinas: [novaBobina()] };
+    return { cor: '', fornecedor: '', precoTecido: 0, precoRibana: 0, numeroLote: '', bobinas: [novaBobina()] };
   }
   function renderCores(){
     const cont = document.getElementById('corteCoresContainer');
@@ -2999,32 +2999,21 @@ function openProducaoForm(prefill){
         </div>
         <div class="row2">
           <div class="field"><label>Cor</label><input class="cr_cor" data-ci="${ci}" value="${escapeHtml(c.cor)}" placeholder="Ex: Bege"></div>
-          <div class="field"><label>Número do pedido</label><input class="cr_numeroLote" data-ci="${ci}" value="${escapeHtml(c.numeroLote)}" placeholder="Ex: 2026-0714"></div>
-        </div>
-        <div class="row2">
           <div class="field"><label>Fornecedor</label><select class="cr_fornecedor" data-ci="${ci}">
             <option value="">Nenhum</option>
             ${fornecedores.map(f=>`<option value="${escapeHtml(f.nome)}" data-preco-tec="${f.precoTecidoKg}" data-preco-rib="${f.precoRibanaKg}" ${c.fornecedor===f.nome?'selected':''}>${escapeHtml(f.nome)} (${escapeHtml(f.tipoTecido)})</option>`).join('')}
           </select></div>
-          <div></div>
         </div>
         <div class="row2">
           <div class="field"><label>Preço tecido (R$/kg)</label><input class="cr_precoTecido" data-ci="${ci}" type="number" min="0" step="0.01" value="${c.precoTecido}"></div>
           <div class="field"><label>Preço ribana (R$/kg)</label><input class="cr_precoRibana" data-ci="${ci}" type="number" min="0" step="0.01" value="${c.precoRibana}"></div>
         </div>
-        <div class="row2">
-          <div class="field"><label>Peso TOTAL tecido desta cor (kg)</label><input class="cr_pesoTotalTecido" data-ci="${ci}" type="number" min="0" step="0.01" value="${c.pesoTotalTecido}" placeholder="Ex: 72.5"></div>
-          <div class="field"><label>Peso TOTAL ribana desta cor (kg)</label><input class="cr_pesoTotalRibana" data-ci="${ci}" type="number" min="0" step="0.01" value="${c.pesoTotalRibana}" placeholder="Ex: 8.6"></div>
-        </div>
-        <div class="field hint">Isso é opcional, só pra conferência: informe aqui o peso total da nota fiscal dessa cor. Nas bobinas abaixo você mesmo decide quanto peso vai pra cada uma (de acordo com o seu plano de corte) — o sistema só soma o que você digitou e avisa se ainda falta ou se passou do total. "⚖️ Dividir igual" é um atalho pra quando as bobinas vão levar o mesmo peso; se não for o caso, ignore e preencha cada uma do seu jeito.</div>
-        <div id="distribCor${ci}"></div>
-        <div class="stitch"></div>
+        <div class="field"><label>Número do pedido</label><input class="cr_numeroLote" data-ci="${ci}" value="${escapeHtml(c.numeroLote)}" placeholder="Ex: 2026-0714"></div>
         <div id="bobinasCor${ci}"></div>
-        <button type="button" class="btn" data-add-bobina="${ci}" style="width:100%; margin-top:6px;">+ Adicionar bobina nesta cor (adulto ou infantil)</button>
-        <button type="button" class="btn" data-split-igual="${ci}" style="width:100%; margin-top:6px;">⚖️ Dividir peso igualmente entre as bobinas</button>
+        <button type="button" class="btn" data-add-bobina="${ci}" style="width:100%; margin-top:6px;">+ Bobina</button>
       </div>`).join('');
 
-    cores.forEach((c,ci)=>{ renderBobinas(ci); renderDistrib(ci); });
+    cores.forEach((c,ci)=>renderBobinas(ci));
 
     cont.querySelectorAll('[data-rm-cor]').forEach(btn=>{
       btn.onclick = ()=>{ cores.splice(Number(btn.dataset.rmCor),1); renderCores(); };
@@ -3035,28 +3024,13 @@ function openProducaoForm(prefill){
         const bobs = cores[ci].bobinas;
         cores[ci].bobinas.push(novaBobina(bobs[bobs.length-1]));
         renderBobinas(ci);
-        renderDistrib(ci);
       };
     });
-    cont.querySelectorAll('[data-split-igual]').forEach(btn=>{
-      btn.onclick = ()=>{
-        const ci = Number(btn.dataset.splitIgual);
-        const c = cores[ci];
-        const n = c.bobinas.length;
-        if(n===0) return;
-        const tecPorBobina = Math.round((Number(c.pesoTotalTecido)||0)/n*100)/100;
-        const ribPorBobina = Math.round((Number(c.pesoTotalRibana)||0)/n*100)/100;
-        c.bobinas.forEach(b=>{ b.peso = tecPorBobina; b.pesoRibana = ribPorBobina; });
-        renderBobinas(ci);
-        renderDistrib(ci);
-      };
-    });
-    cont.querySelectorAll('.cr_cor, .cr_numeroLote, .cr_precoTecido, .cr_precoRibana, .cr_pesoTotalTecido, .cr_pesoTotalRibana').forEach(el=>{
+    cont.querySelectorAll('.cr_cor, .cr_numeroLote, .cr_precoTecido, .cr_precoRibana').forEach(el=>{
       const campo = el.className.replace('cr_','');
       el.onchange = ()=>{
         const ci = Number(el.dataset.ci);
         cores[ci][campo] = el.type==='number' ? (Number(el.value)||0) : el.value;
-        renderDistrib(ci);
       };
     });
     cont.querySelectorAll('.cr_fornecedor').forEach(el=>{
@@ -3078,7 +3052,7 @@ function openProducaoForm(prefill){
       const tams = b.sistemaTamanho==='infantil' ? TAMS_INFANTIL : TAMS_ADULTO;
       return `<div class="subitem" style="margin-bottom:10px;">
         <div class="subitem-label" style="display:flex; justify-content:space-between; align-items:center;">
-          <span>Bobina ${bi+1} — ${b.sistemaTamanho==='infantil'?'Infantil':'Adulto'}</span>
+          <span>Bobina ${bi+1}</span>
           ${bobinas.length>1?`<button type="button" class="btn btn-danger" data-rm-bobina="${ci}:${bi}">Remover</button>`:''}
         </div>
         <div class="row2">
@@ -3093,10 +3067,9 @@ function openProducaoForm(prefill){
           <div class="field"><label>Peso ribana (kg)</label><input class="bb_pesoRibana" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="0.01" value="${b.pesoRibana}"></div>
         </div>
         <div class="row2">
-          <div class="field"><label>Meta rendimento (peças)</label><input class="bb_metaRendimento" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="1" value="${b.metaRendimento}"></div>
-          <div class="field"><label>Valor unit. cortador (R$)</label><input class="bb_valorUnit" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="0.01" value="${b.valorUnit}"></div>
+          <div class="field"><label>Meta rendimento</label><input class="bb_metaRendimento" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="1" value="${b.metaRendimento}"></div>
+          <div class="field"><label>Valor unit. (R$)</label><input class="bb_valorUnit" data-ci="${ci}" data-bi="${bi}" type="number" min="0" step="0.01" value="${b.valorUnit}"></div>
         </div>
-        <div class="field" style="margin-bottom:4px;"><label>Tamanhos solicitados</label></div>
         <div class="row4" style="grid-template-columns:repeat(${Math.min(tams.length,4)},1fr);">
           ${tams.map(t=>`<div class="tamcheck"><label style="margin:0; text-transform:none;">${t}</label><input type="checkbox" class="bb_tam" data-ci="${ci}" data-bi="${bi}" data-t="${t}" ${b.tamanhos[t]?'checked':''}></div>`).join('')}
         </div>
@@ -3114,7 +3087,6 @@ function openProducaoForm(prefill){
         cores[ci].bobinas[bi].sistemaTamanho = el.value;
         cores[ci].bobinas[bi].tamanhos = {};
         renderBobinas(ci);
-        renderDistrib(ci);
       };
     });
     bobCont.querySelectorAll('.bb_produto, .bb_peso, .bb_pesoRibana, .bb_metaRendimento, .bb_valorUnit').forEach(el=>{
@@ -3122,7 +3094,6 @@ function openProducaoForm(prefill){
       el.onchange = ()=>{
         const ci = Number(el.dataset.ci), bi = Number(el.dataset.bi);
         cores[ci].bobinas[bi][campo] = el.type==='number' ? (Number(el.value)||0) : el.value;
-        if(campo==='peso' || campo==='pesoRibana') renderDistrib(ci);
       };
     });
     bobCont.querySelectorAll('[data-rm-bobina]').forEach(btn=>{
@@ -3130,27 +3101,9 @@ function openProducaoForm(prefill){
         const [ci,bi] = btn.dataset.rmBobina.split(':').map(Number);
         cores[ci].bobinas.splice(bi,1);
         renderBobinas(ci);
-        renderDistrib(ci);
       };
     });
   }
-  function renderDistrib(ci){
-    const el = document.getElementById('distribCor'+ci);
-    if(!el) return;
-    const c = cores[ci];
-    const distTec = c.bobinas.reduce((s,b)=>s+(Number(b.peso)||0),0);
-    const distRib = c.bobinas.reduce((s,b)=>s+(Number(b.pesoRibana)||0),0);
-    const totalTec = Number(c.pesoTotalTecido)||0;
-    const totalRib = Number(c.pesoTotalRibana)||0;
-    const sobraTec = Math.round((totalTec-distTec)*100)/100;
-    const sobraRib = Math.round((totalRib-distRib)*100)/100;
-    if(totalTec<=0 && totalRib<=0){ el.innerHTML=''; return; }
-    const corTec = Math.abs(sobraTec)<0.01 ? 'var(--revisao)' : (sobraTec<0 ? 'var(--perda)' : 'var(--corte)');
-    const corRib = Math.abs(sobraRib)<0.01 ? 'var(--revisao)' : (sobraRib<0 ? 'var(--perda)' : 'var(--corte)');
-    el.innerHTML = `<div class="field hint" style="color:${corTec};">Conferência tecido: você lançou ${distTec.toFixed(2)} kg nas bobinas abaixo, de ${totalTec.toFixed(2)} kg no total desta cor ${Math.abs(sobraTec)<0.01?'✓ bate certinho':(sobraTec>0?'· ainda restam '+sobraTec.toFixed(2)+' kg pra lançar em alguma bobina':'· você lançou '+Math.abs(sobraTec).toFixed(2)+' kg a mais do que o total informado')}</div>
-    ${totalRib>0?`<div class="field hint" style="color:${corRib};">Conferência ribana: você lançou ${distRib.toFixed(2)} kg nas bobinas abaixo, de ${totalRib.toFixed(2)} kg no total desta cor ${Math.abs(sobraRib)<0.01?'✓ bate certinho':(sobraRib>0?'· ainda restam '+sobraRib.toFixed(2)+' kg pra lançar em alguma bobina':'· você lançou '+Math.abs(sobraRib).toFixed(2)+' kg a mais do que o total informado')}</div>`:''}`;
-  }
-
   function tamanhoInputsHtml(prefix){
     const tams = tamsAtivos();
     return `<div class="field"><label>Quantidade enviada por tamanho</label></div>
@@ -3167,8 +3120,7 @@ function openProducaoForm(prefill){
       if(!cores) cores = [novaCor()];
       campoEtapaEnvio.innerHTML = `
         <div id="corteCoresContainer"></div>
-        <button type="button" class="btn" id="btnAddCor" style="width:100%; margin-bottom:14px;">+ Adicionar outra cor</button>
-        <div class="field hint">Cada bobina vira um lote separado, com seu próprio código de rastreio. Misture bobinas Adulto e Infantil na mesma cor à vontade.</div>`;
+        <button type="button" class="btn" id="btnAddCor" style="width:100%; margin-bottom:14px;">+ Cor</button>`;
       renderCores();
       document.getElementById('btnAddCor').onclick = ()=>{ cores.push(novaCor()); renderCores(); };
     }else{
