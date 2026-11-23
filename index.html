@@ -392,12 +392,21 @@ async function firebaseSignUpUser(username, password){
     return {...r, localHash: hash};
   }
 
-  const auth = firebase.auth();
+  // cria a conta numa instância separada, para não trocar o login de quem está usando o app
+  const appCriar = firebase.apps.find(a=>a.name==='criarUsuario') || firebase.initializeApp(FIREBASE_CONFIG, 'criarUsuario');
+  const auth = appCriar.auth();
   const email = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@jlvestuario.app`;
   try{
     const cred = await auth.createUserWithEmailAndPassword(email, password);
+    try{ await auth.signOut(); }catch(e){}
     return {success: true, uid: cred.user.uid, email, localHash: hash};
   }catch(err){
+    if(err.code === 'auth/admin-restricted-operation' || err.code === 'auth/operation-not-allowed'){
+      return {success:false, error:'Criar usuário novo está fechado por segurança: peça ao Claude para criar o acesso.'};
+    }
+    if(err.code === 'auth/weak-password'){
+      return {success:false, error:'A senha precisa ter pelo menos 6 caracteres'};
+    }
     if(err.code === 'auth/email-already-in-use'){
       try{
         const cred = await auth.signInWithEmailAndPassword(email, password);
@@ -1114,11 +1123,17 @@ function renderAuthScreen(){
       if(!nome || !senha){ showToast('Preencha nome e senha'); return; }
       showToast('Entrando...');
       try{
-        const cand = usuarios.find(x=>x.nome.toLowerCase()===nome.toLowerCase());
-        if(!cand){ showToast('Usuário ou senha incorretos'); return; }
-        const authResult = await firebaseSignInUser(nome, senha);
-        if(!authResult.success){ showToast(authResult.error); return; }
-        loginAs(cand);
+        if(!firebaseAvailable){
+          // sem conexão com o Firebase: login antigo, só local
+          const cand = usuarios.find(x=>x.nome.toLowerCase()===nome.toLowerCase());
+          if(!cand){ showToast('Usuário ou senha incorretos'); return; }
+          const authResult = await firebaseSignInUser(nome, senha);
+          if(!authResult.success){ showToast(authResult.error); return; }
+          loginAs(cand); return;
+        }
+        const r = await entrarComFirebase(nome, senha);
+        if(!r.success){ showToast(r.error); return; }
+        loginAs(r.usuario);
       }catch(e){
         showToast('Erro ao fazer login: ' + e.message);
       }
@@ -1126,6 +1141,36 @@ function renderAuthScreen(){
     document.getElementById('btnLogin').onclick = tryLogin;
     document.getElementById('loginSenha').onkeydown = (e)=>{ if(e.key==='Enter') tryLogin(); };
   }
+}
+// Login pelo Firebase (exigido para ler/gravar os dados). Na primeira vez de cada pessoa,
+// confere a senha antiga do app e cria a conta no Firebase com essa mesma senha.
+async function entrarComFirebase(nome, senha){
+  const falha = {success:false, error:'Usuário ou senha incorretos'};
+  const email = `${nome.toLowerCase().replace(/[^a-z0-9]/g, '')}@jlvestuario.app`;
+  const auth = firebase.auth();
+  try{
+    await auth.signInWithEmailAndPassword(email, senha);
+  }catch(err){
+    let lista = null;
+    try{
+      const s = await firebaseDb.collection('controle_producao_dados').doc('usuarios').get();
+      if(s.exists) lista = JSON.parse(s.data().value);
+    }catch(e){}
+    if(!lista) return falha;
+    const cand = lista.find(x=>x.nome.toLowerCase()===nome.toLowerCase());
+    if(!cand || (await hashPassword(senha))!==cand.hash) return falha;
+    try{
+      await auth.createUserWithEmailAndPassword(email, senha);
+    }catch(e2){
+      if(e2.code==='auth/weak-password') return {success:false, error:'Sua senha tem menos de 6 caracteres. Peça ao administrador para trocar.'};
+      return {success:false, error:'Não consegui criar seu acesso: '+e2.message};
+    }
+  }
+  if(!auth.currentUser) return falha;
+  await loadAll();
+  const u = usuarios.find(x=>x.nome.toLowerCase()===nome.toLowerCase());
+  if(!u){ await auth.signOut(); return {success:false, error:'Usuário não encontrado'}; }
+  return {success:true, usuario:u};
 }
 function loginAs(u){
   currentUser = u;
@@ -4168,6 +4213,20 @@ function openEditarUsuarioForm(uId){
     const nome = document.getElementById('f_uNome').value.trim();
     const senha = document.getElementById('f_uSenha').value;
     if(!nome){ showToast('Preencha o nome'); return; }
+    if(senha && firebaseAvailable){
+      // a senha agora vive no Firebase: só dá pra trocar a do próprio usuário logado
+      const fu = firebase.auth().currentUser;
+      if(!(currentUser && currentUser.id===u.id && fu)){ showToast('Para trocar a senha de outra pessoa, peça ao Claude ou use o console do Firebase'); return; }
+      if(senha.length<6){ showToast('A senha precisa ter pelo menos 6 caracteres'); return; }
+      try{ await fu.updatePassword(senha); }
+      catch(e){ showToast(e.code==='auth/requires-recent-login' ? 'Saia e entre de novo, depois troque a senha' : 'Erro ao trocar senha: '+e.message); return; }
+      u.hash = await hashPassword(senha);
+      u.nome = nome;
+      u.papel = document.getElementById('f_uPapel').value;
+      await saveUsuarios(); closeModal(); render(); showToast('Usuário atualizado');
+      currentUser = u; updateUserBadge();
+      return;
+    }
     u.nome = nome;
     if(senha){
       try{
@@ -4346,12 +4405,26 @@ document.getElementById('fabBtn').onclick = openFormForTab;
 
 (async function init(){
   render();
-  await loadAll();
+  await waitForFirebase();
   let savedId = null;
   try{ savedId = localStorage.getItem('jl_session'); }catch(e){}
-  if(savedId){
-    const u = usuarios.find(x=>x.id===savedId);
-    if(u) currentUser = u;
+  if(!firebaseAvailable){
+    // sem Firebase: modo antigo (dados locais)
+    await loadAll();
+    if(savedId){ const u = usuarios.find(x=>x.id===savedId); if(u) currentUser = u; }
+    applyAuthState();
+    return;
+  }
+  // só carrega os dados depois de saber quem está logado no Firebase
+  const fbUser = await new Promise(res=>{ const off = firebase.auth().onAuthStateChanged(u=>{ off(); res(u); }); });
+  if(fbUser){
+    await loadAll();
+    let u = savedId ? usuarios.find(x=>x.id===savedId) : null;
+    const nomeEmail = String(fbUser.email||'').split('@')[0];
+    if(!u || u.nome.toLowerCase().replace(/[^a-z0-9]/g,'')!==nomeEmail) u = usuarios.find(x=>x.nome.toLowerCase().replace(/[^a-z0-9]/g,'')===nomeEmail) || null;
+    if(u){ currentUser = u; try{ localStorage.setItem('jl_session', u.id); }catch(e){} }
+  }else{
+    try{ localStorage.removeItem('jl_session'); }catch(e){}
   }
   applyAuthState();
 })();
