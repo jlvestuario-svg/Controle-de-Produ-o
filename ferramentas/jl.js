@@ -46,8 +46,33 @@ var IO = IS_NODE ? (function () {
   };
 })();
 
+// ---------------- login do script no Firebase ----------------
+// Email: variável JL_EMAIL (padrão claude@jlvestuario.app). Senha: variável JL_SENHA, ou o arquivo ~/.jl_senha.
+// A senha nunca fica no repositório.
+function env(k) {
+  if (IS_NODE) return process.env[k] || '';
+  var v = $.NSProcessInfo.processInfo.environment.objectForKey(k); return v && !v.isNil() ? ObjC.unwrap(v) : '';
+}
+var _idToken = null;
+function idToken() {
+  if (_idToken !== null) return _idToken;
+  var senha = env('JL_SENHA');
+  if (!senha) { try { senha = IO.read((env('HOME') || '') + '/.jl_senha'); } catch (e) { senha = ''; } }
+  senha = (senha || '').replace(/[\r\n]+$/, '');
+  if (!senha) { _idToken = ''; return ''; }
+  var email = env('JL_EMAIL') || 'claude@jlvestuario.app';
+  var r = httpBruto('POST', 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + KEY, { email: email, password: senha, returnSecureToken: true }, null);
+  if (r.code !== 200) throw new Error('Login do script no Firebase falhou (' + ((r.json && r.json.error && r.json.error.message) || r.code) + '). Confira JL_SENHA / ~/.jl_senha.');
+  _idToken = r.json.idToken; return _idToken;
+}
 function http(method, url, body) {
+  var r = httpBruto(method, url, body, idToken());
+  if (r.code === 403 || r.code === 401) throw new Error('Sem permissão no banco (' + r.code + '). O banco está fechado e o script precisa de login: configure JL_SENHA (nuvem) ou ~/.jl_senha (Mac).');
+  return r;
+}
+function httpBruto(method, url, body, token) {
   var args = ['-sS', '-X', method, '-H', 'Content-Type: application/json', '-w', '\n%{http_code}'];
+  if (token) args.push('-H', 'Authorization: Bearer ' + token);
   var f = null;
   if (body !== undefined) { f = IO.tmp(); IO.write(f, JSON.stringify(body)); args.push('--data-binary', '@' + f); }
   args.push(url);
