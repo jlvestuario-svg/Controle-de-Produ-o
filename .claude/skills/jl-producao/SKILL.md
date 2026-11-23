@@ -14,6 +14,8 @@ O Gabriel não preenche mais o app na mão. Ele manda a informação do jeito de
 - Com node (sessão na nuvem): `node ferramentas/jl.js <comando>`
 - No Mac dele (sem node): `osascript -l JavaScript ferramentas/jl.js <comando>` (se estiver fora do repositório, baixe antes: `curl -sL https://raw.githubusercontent.com/jlvestuario-svg/Controle-de-Produ-o/main/ferramentas/jl.js -o /tmp/jl.js`)
 
+Login: o banco exige login. O script entra como `claude@jlvestuario.app` usando a senha da variável `JL_SENHA` (sessão na nuvem) ou do arquivo `~/.jl_senha` (Mac). Se aparecer "Sem permissão no banco" ou "Login do script falhou", avise o Gabriel que a senha do script não está configurada; nunca peça a senha no chat nem a grave no repositório.
+
 Comandos:
 - `resumo`: corte em andamento, cortado sem costura, em mãos de cada costureira (com ids), aguardando revisão, a pagar
 - `auditoria`: tudo que está inconsistente
