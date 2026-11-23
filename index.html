@@ -265,6 +265,17 @@ function getFirebaseAuth(){
   return firebaseAuth;
 }
 
+// Último conteúdo lido/salvo de cada documento. Antes de salvar, confere se ninguém (outro aparelho
+// ou o Claude) mudou o documento nesse meio-tempo; se mudou, não grava por cima e recarrega a página.
+const _storageVisto = {};
+let _storageConflitoAvisado = false;
+function _storageConflito(key){
+  if(_storageConflitoAvisado) return;
+  _storageConflitoAvisado = true;
+  alert('Os dados foram alterados em outro aparelho (ou pelo Claude) enquanto esta tela estava aberta.\n\nPara não apagar essa alteração, nada foi salvo agora. A página vai recarregar com os dados atualizados: refaça o último lançamento.');
+  location.reload();
+}
+
 if(typeof window.storage === 'undefined' || !window.storage){
   window.storage = {
     async get(key){
@@ -275,6 +286,7 @@ if(typeof window.storage === 'undefined' || !window.storage){
           let snap = await firebaseDb.collection('controle_producao_dados').doc(key).get();
           if(snap.exists){
             console.log('[Storage] Dados carregados do Firebase (controle_producao_dados):', key);
+            _storageVisto[key] = snap.data().value;
             return {key, value: snap.data().value};
           }
 
@@ -309,11 +321,21 @@ if(typeof window.storage === 'undefined' || !window.storage){
       // Tenta sempre no Firebase primeiro (salvar na nuvem)
       try{
         if(firebaseApp && firebaseDb){
-          await firebaseDb.collection('controle_producao_dados').doc(key).set({value});
+          const ref = firebaseDb.collection('controle_producao_dados').doc(key);
+          await firebaseDb.runTransaction(async tx=>{
+            const atual = await tx.get(ref);
+            const valorAtual = atual.exists ? atual.data().value : undefined;
+            if(_storageVisto[key]!==undefined && valorAtual!==undefined && valorAtual!==_storageVisto[key] && valorAtual!==value){
+              const err = new Error('CONFLITO'); err.conflito = true; throw err;
+            }
+            tx.set(ref, {value});
+          });
+          _storageVisto[key] = value;
           success = true;
           console.log('[Storage] Dados salvos no Firebase:', key);
         }
       }catch(e){
+        if(e && e.conflito){ _storageConflito(key); throw e; }
         console.warn('[Storage] Firebase set falhou:', e.message);
       }
 
@@ -473,7 +495,7 @@ let finModo = 'mes';
 let dataReady = false;
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function todayStr(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); } // data local (antes usava UTC e virava o dia às 21h)
 function fmtMoney(v){ return (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 async function hashPassword(senha){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(senha));
