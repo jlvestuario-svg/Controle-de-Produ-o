@@ -547,6 +547,7 @@ function principal(argv) {
     if (cmd === 'simular') return executar(argv[1], false);
     if (cmd === 'gravar') return executar(argv[1], true);
     if (cmd === 'backups') return listarBackups();
+    if (cmd === 'exportar') { var tudo = { geradoEm: new Date().toISOString(), dados: {} }; ['producao', 'perdas', 'config', 'fornecedores', 'insumosExtras', 'contasPagar', 'financeiroData'].forEach(function (k) { tudo.dados[k] = lerDoc(k).value; }); var txt = JSON.stringify(tudo); if (argv[1]) { IO.write(argv[1], txt); return 'OK ' + argv[1] + ' (' + txt.length + ' bytes)'; } return txt; }
     if (cmd === 'desfazer') return desfazer(argv[1]);
     if (cmd === '__teste') return (function () { var b = lerTudo(); b.original = clone(b.estado); var job = JSON.parse(IO.read(argv[1])); var c = Ctx(b.estado); var r = OPS[job.op](c, job.params); return JSON.stringify({ r: r, producao: c.S.producao, perdas: c.S.perdas, original: b.original }); })();
     return consulta(cmd, argv.slice(1).join(' '));
